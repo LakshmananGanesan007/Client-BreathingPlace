@@ -1,0 +1,156 @@
+{
+  "name": "TherapistProfile",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Reference to User entity"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "bio": {
+      "type": "string"
+    },
+    "qualification": {
+      "type": "string"
+    },
+    "experience_years": {
+      "type": "number"
+    },
+    "specializations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "profile_photo_url": {
+      "type": "string"
+    },
+    "gov_id_url": {
+      "type": "string"
+    },
+    "certificates_url": {
+      "type": "string"
+    },
+    "license_url": {
+      "type": "string"
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "rejection_reason": {
+      "type": "string"
+    },
+    "available_days": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "available_times": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "consultation_fee": {
+      "type": "number"
+    },
+    "platform_markup_percentage": {
+      "type": "number",
+      "default": 0
+    },
+    "final_customer_price": {
+      "type": "number",
+      "default": 0
+    },
+    "profile_complete": {
+      "type": "boolean"
+    },
+    "slug": {
+      "type": "string",
+      "description": "URL-friendly unique identifier for public profile"
+    },
+    "profile_color": {
+      "type": "string",
+      "description": "Hex color for therapist profile branding",
+      "default": "#2E8B57"
+    },
+    "profile_tagline": {
+      "type": "string",
+      "description": "Short tagline shown on public profile"
+    },
+    "currency": {
+      "type": "string",
+      "default": "INR",
+      "description": "Currency code for consultation fee"
+    }
+  },
+  "required": [
+    "user_id",
+    "full_name"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        },
+        {
+          "data.approval_status": "approved"
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

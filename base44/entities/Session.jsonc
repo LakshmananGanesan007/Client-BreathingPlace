@@ -1,0 +1,134 @@
+{
+  "name": "Session",
+  "type": "object",
+  "properties": {
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "therapist_id": {
+      "type": "string"
+    },
+    "therapist_name": {
+      "type": "string"
+    },
+    "session_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "start_time": {
+      "type": "string"
+    },
+    "end_time": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "scheduled",
+        "in_progress",
+        "completed",
+        "cancelled",
+        "no_show",
+        "pending_acceptance"
+      ],
+      "default": "scheduled"
+    },
+    "session_type": {
+      "type": "string",
+      "enum": [
+        "initial_consultation",
+        "follow_up",
+        "crisis",
+        "regular",
+        "talk_freely",
+        "premium"
+      ]
+    },
+    "session_mode": {
+      "type": "string",
+      "enum": [
+        "chat",
+        "voice_call",
+        "video_call"
+      ],
+      "default": "chat"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "meeting_url": {
+      "type": "string"
+    },
+    "cancellation_reason": {
+      "type": "string"
+    },
+    "accepted_by_therapist": {
+      "type": "boolean",
+      "default": false
+    },
+    "premium_start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "reschedule_request": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "customer_id",
+    "therapist_id",
+    "session_date",
+    "start_time"
+  ],
+  "rls": {
+    "create": {},
+    "read": {
+      "$or": [
+        {
+          "data.customer_id": "{{user.id}}"
+        },
+        {
+          "data.therapist_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.customer_id": "{{user.id}}"
+        },
+        {
+          "data.therapist_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

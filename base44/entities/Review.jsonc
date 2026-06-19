@@ -1,0 +1,43 @@
+{
+  "name": "Review",
+  "type": "object",
+  "properties": {
+    "therapist_id": {
+      "type": "string"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "rating": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "comment": {
+      "type": "string"
+    },
+    "session_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "therapist_id",
+    "customer_id",
+    "rating"
+  ],
+  "rls": {
+    "create": {
+      "data.customer_id": "{{user.id}}"
+    },
+    "read": {},
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

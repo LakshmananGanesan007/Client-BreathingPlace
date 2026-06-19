@@ -1,0 +1,78 @@
+{
+  "name": "AvailabilityBlock",
+  "type": "object",
+  "properties": {
+    "therapist_id": {
+      "type": "string"
+    },
+    "block_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "start_time": {
+      "type": "string"
+    },
+    "end_time": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "is_available": {
+      "type": "boolean",
+      "default": false,
+      "description": "false = blocked, true = available slot"
+    }
+  },
+  "required": [
+    "therapist_id",
+    "block_date",
+    "start_time"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "data.therapist_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}

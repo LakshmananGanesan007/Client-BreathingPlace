@@ -1,0 +1,183 @@
+{
+  "name": "CustomerProfile",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Reference to User entity"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "profile_photo_url": {
+      "type": "string"
+    },
+    "dob": {
+      "type": "string",
+      "format": "date"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "male",
+        "female",
+        "non_binary",
+        "prefer_not_to_say"
+      ]
+    },
+    "phone": {
+      "type": "string"
+    },
+    "emergency_contact": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "occupation": {
+      "type": "string"
+    },
+    "main_concerns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "anxiety_level": {
+      "type": "string",
+      "enum": [
+        "none",
+        "mild",
+        "moderate",
+        "severe"
+      ]
+    },
+    "stress_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "moderate",
+        "high",
+        "very_high"
+      ]
+    },
+    "depression_history": {
+      "type": "boolean"
+    },
+    "previous_therapy": {
+      "type": "boolean"
+    },
+    "current_medication": {
+      "type": "string"
+    },
+    "sleep_quality": {
+      "type": "string",
+      "enum": [
+        "good",
+        "fair",
+        "poor",
+        "very_poor"
+      ]
+    },
+    "relationship_status": {
+      "type": "string",
+      "enum": [
+        "single",
+        "in_relationship",
+        "married",
+        "divorced",
+        "widowed"
+      ]
+    },
+    "preferred_language": {
+      "type": "string"
+    },
+    "preferred_therapist_gender": {
+      "type": "string",
+      "enum": [
+        "male",
+        "female",
+        "no_preference"
+      ]
+    },
+    "preferred_session_time": {
+      "type": "string",
+      "enum": [
+        "morning",
+        "afternoon",
+        "evening",
+        "flexible"
+      ]
+    },
+    "assigned_therapist_id": {
+      "type": "string"
+    },
+    "profile_complete": {
+      "type": "boolean"
+    },
+    "free_support_used": {
+      "type": "boolean",
+      "default": false
+    },
+    "free_support_completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "free_support_session_id": {
+      "type": "string",
+      "description": "ID of the completed Talk Freely session"
+    },
+    "free_support_closed_by": {
+      "type": "string",
+      "description": "Admin user ID who closed the session"
+    }
+  },
+  "required": [
+    "user_id",
+    "full_name"
+  ],
+  "rls": {
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "super_admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

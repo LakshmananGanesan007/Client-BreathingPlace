@@ -1,0 +1,21 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "customer",
+        "therapist",
+        "admin",
+        "super_admin"
+      ],
+      "default": "user"
+    },
+    "profile_setup_complete": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}
