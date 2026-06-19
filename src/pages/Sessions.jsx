@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/lib/supabaseClient";
 import RoleGuard from "@/components/RoleGuard";
 import EmptyState from "@/components/EmptyState";
 import { TableRowSkeleton } from "@/components/SkeletonLoader";
@@ -41,21 +41,33 @@ function SessionsContent() {
 
   const { data: sessions = [], isLoading: loadingSessions } = useQuery({
     queryKey: ["sessions", user?.id, user?.role],
-    queryFn: () => {
-      if (isAdmin) return base44.entities.Session.list("-session_date", 100);
-      return base44.entities.Session.filter({ [filterField]: user?.id }, "-session_date", 50);
+    queryFn: async () => {
+      let query = supabase.from("sessions").select("*").order("session_date", { ascending: false }).limit(100);
+      if (!isAdmin) {
+        query = query.eq(filterField, user?.id);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
     },
     enabled: !!user?.id,
   });
 
   const { data: therapists = [], isLoading: loadingTherapists } = useQuery({
     queryKey: ["approved-therapists"],
-    queryFn: () => base44.entities.TherapistProfile.filter({ approval_status: "approved" }),
+    queryFn: async () => {
+      const { data, error } = await supabase.from("therapist_profiles").select("*").eq("approval_status", "approved");
+      if (error) throw error;
+      return data || [];
+    },
     enabled: !isTherapist && !isAdmin,
   });
 
   const createSession = useMutation({
-    mutationFn: (data) => base44.entities.Session.create(data),
+    mutationFn: async (data) => {
+      const { error } = await supabase.from("sessions").insert([data]);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       setCreateOpen(false);
@@ -65,7 +77,10 @@ function SessionsContent() {
   });
 
   const cancelSession = useMutation({
-    mutationFn: ({ id, reason }) => base44.entities.Session.update(id, { status: "cancelled", cancellation_reason: reason }),
+    mutationFn: async ({ id, reason }) => {
+      const { error } = await supabase.from("sessions").update({ status: "cancelled", cancellation_reason: reason }).eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       setCancelDialog(null);
@@ -100,10 +115,8 @@ function SessionsContent() {
         )}
       </div>
 
-      {/* Admin Live Monitor */}
       {isAdmin && <AdminVideoMonitor sessions={sessions} />}
 
-      {/* Upcoming */}
       <div>
         <h2 className="font-heading text-base font-semibold mb-3">
           Upcoming <span className="text-muted-foreground font-normal">({upcoming.length})</span>
@@ -137,7 +150,6 @@ function SessionsContent() {
         )}
       </div>
 
-      {/* Past */}
       {past.length > 0 && (
         <div>
           <h2 className="font-heading text-base font-semibold mb-3">
@@ -149,7 +161,6 @@ function SessionsContent() {
         </div>
       )}
 
-      {/* Video Call Modal */}
       <VideoCallModal
         session={videoSession}
         open={!!videoSession}
@@ -162,7 +173,6 @@ function SessionsContent() {
         </div>
       )}
 
-      {/* Book Session Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
@@ -177,13 +187,13 @@ function SessionsContent() {
                 </p>
               ) : (
                 <Select value={newSession.therapist_id || ""} onValueChange={v => {
-                  const t = therapists.find(th => th.id === v);
-                  setNewSession(prev => ({ ...prev, therapist_id: t?.user_id, therapist_profile_id: v, therapist_name: t?.full_name }));
+                  const t = therapists.find(th => th.user_id === v);
+                  setNewSession(prev => ({ ...prev, therapist_id: t?.user_id, therapist_profile_id: t?.id, therapist_name: t?.full_name }));
                 }}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Choose a therapist" /></SelectTrigger>
                   <SelectContent>
                     {therapists.map(t => (
-                      <SelectItem key={t.id} value={t.id}>
+                      <SelectItem key={t.id} value={t.user_id}>
                         {t.full_name} — {t.qualification}{t.consultation_fee ? ` · ₹${t.consultation_fee}` : ""}
                       </SelectItem>
                     ))}
@@ -229,7 +239,7 @@ function SessionsContent() {
                 customer_name: user.full_name || user.email,
                 status: "scheduled",
               })}
-              disabled={!newSession.therapist_id || !newSession.therapist_id || !newSession.session_date || !newSession.start_time || createSession.isPending}
+              disabled={!newSession.therapist_id || !newSession.session_date || !newSession.start_time || createSession.isPending}
             >
               {createSession.isPending ? "Booking..." : "Confirm Booking"}
             </Button>
@@ -237,7 +247,6 @@ function SessionsContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Cancel Dialog */}
       <Dialog open={!!cancelDialog} onOpenChange={() => { setCancelDialog(null); setCancelReason(""); }}>
         <DialogContent>
           <DialogHeader>
@@ -311,7 +320,6 @@ function SessionRow({ session, isTherapist, isAdmin, onCancel, onJoinVideo, past
 }
 
 export default function Sessions() {
-  const { user } = useAuth();
   const allowedRoles = ["customer", "user", "therapist", "admin", "super_admin"];
   return (
     <RoleGuard allowedRoles={allowedRoles}>

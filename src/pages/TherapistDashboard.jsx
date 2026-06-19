@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import RoleGuard from "@/components/RoleGuard";
 import StatCard from "@/components/StatCard";
@@ -9,7 +8,6 @@ import EmptyState from "@/components/EmptyState";
 import { DashboardSkeleton } from "@/components/SkeletonLoader";
 import TherapistApprovalCongrats from "@/components/TherapistApprovalCongrats";
 import { Users, Calendar, Clock, AlertCircle, CheckCircle, FileText, ArrowRight, Bell, User } from "lucide-react";
-import { useQueryClient as useQC } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -21,42 +19,51 @@ const CONGRATS_KEY = "therapist_congrats_shown";
 function DashboardContent() {
   const { user, userProfile } = useAuth();
   const queryClient = useQueryClient();
-  const prevSessionCount = useRef(null);
   const [showCongrats, setShowCongrats] = useState(false);
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ["therapist-profile", user?.id],
     queryFn: async () => {
-      const res = await base44.functions.invoke("getTherapistData", {
-        action: "get_profile",
-        user_id: user.id
-      });
-      return res.data?.data || null;
+      const { data, error } = await supabase
+        .from('therapist_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data || null;
     },
     enabled: !!user?.id,
   });
 
   const { data: sessions = [], isLoading: loadingSessions } = useQuery({
     queryKey: ["therapist-sessions", user?.id],
-    queryFn: () => base44.entities.Session.filter({ therapist_id: user?.id }, "-session_date", 50),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('therapist_id', user.id)
+        .order('session_date', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data || [];
+    },
     enabled: !!user?.id,
   });
 
-  // Real-time subscription — notify on new bookings
+  // Real-time subscription — notify on new bookings using Supabase Realtime
   useEffect(() => {
     if (!user?.id) return;
-    const unsubscribe = base44.entities.Session.subscribe((event) => {
-      if (event.type === "create" && event.data?.therapist_id === user.id) {
+    const channel = supabase.channel('therapist_sessions_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: `therapist_id=eq.${user.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          toast.success(`New session booked on ${moment(payload.new.session_date).format("MMM D")}.`, { duration: 5000 });
+        }
         queryClient.invalidateQueries({ queryKey: ["therapist-sessions", user.id] });
-        toast.success(`New session booked by ${event.data.customer_name || "a client"} on ${moment(event.data.session_date).format("MMM D")}.`, { duration: 5000 });
-      } else if (event.type === "update" || event.type === "delete") {
-        queryClient.invalidateQueries({ queryKey: ["therapist-sessions", user.id] });
-      }
-    });
-    return unsubscribe;
+      }).subscribe();
+      
+    return () => { supabase.removeChannel(channel); };
   }, [user?.id, queryClient]);
 
-  // Show congrats overlay once when newly approved
   useEffect(() => {
     if (profile?.approval_status === "approved") {
       const alreadyShown = localStorage.getItem(CONGRATS_KEY + "_" + user?.id);
@@ -86,7 +93,6 @@ function DashboardContent() {
     <div className="max-w-6xl mx-auto space-y-6">
       {showCongrats && <TherapistApprovalCongrats onDismiss={handleDismissCongrats} />}
 
-      {/* Profile Not Created */}
       {(!profile && userProfile?.profile_status !== "completed") && (
         <div className="rounded-xl bg-blue-50 border border-blue-200 p-5 flex items-start gap-3">
           <FileText className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
@@ -100,7 +106,6 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Profile Under Review */}
       {((profile && approvalStatus === "pending") || (!profile && userProfile?.profile_status === "completed" && userProfile?.approval_status !== "approved")) && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 p-5 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -111,7 +116,6 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Profile Approved */}
       {((profile && approvalStatus === "approved") || (!profile && userProfile?.approval_status === "approved")) && (
         <div className="rounded-xl bg-green-50 border border-green-200 p-5 flex items-start gap-3">
           <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
@@ -122,7 +126,6 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Rejected banner */}
       {profile && approvalStatus === "rejected" && (
         <div className="rounded-xl bg-red-50 border border-red-200 p-5 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
@@ -133,7 +136,6 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Header with Under Review badge in top-right */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold">
@@ -155,7 +157,6 @@ function DashboardContent() {
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Users} label="Total Clients" value={uniqueClients} />
         <StatCard icon={Calendar} label="Upcoming Sessions" value={upcomingSessions.length} />
@@ -171,7 +172,6 @@ function DashboardContent() {
         />
       </div>
 
-      {/* Pending Session Requests */}
       {(() => {
         const pending = sessions.filter(s => s.status === "scheduled" && !s.accepted_by_therapist);
         if (pending.length === 0) return null;
@@ -192,7 +192,6 @@ function DashboardContent() {
         );
       })()}
 
-      {/* Upcoming Sessions */}
       <div className="bg-card rounded-xl border border-border">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="font-heading text-base font-semibold flex items-center gap-2">
@@ -243,20 +242,28 @@ function DashboardContent() {
 }
 
 function PendingSessionCard({ session, therapistId }) {
-  const queryClient = useQC();
+  const queryClient = useQueryClient();
   const acceptSession = useMutation({
-    mutationFn: () => base44.entities.Session.update(session.id, { accepted_by_therapist: true, status: "scheduled" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["therapist-sessions"] });
-      toast.success(`Session with ${session.customer_name} accepted!`);
-      // Create notification for customer
-      base44.entities.Notification.create({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('sessions')
+        .update({ accepted_by_therapist: true, status: "scheduled" })
+        .eq('id', session.id);
+      
+      if (error) throw error;
+
+      // Fire and forget notification
+      await supabase.from('notifications').insert({
         user_id: session.customer_id,
         title: "Session Accepted",
         body: `${session.therapist_name || "Your therapist"} has accepted your session request for ${session.session_date} at ${session.start_time}.`,
         type: "session_accepted",
         related_id: session.id,
-      });
+      }).catch(() => {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["therapist-sessions"] });
+      toast.success(`Session with ${session.customer_name} accepted!`);
     },
   });
 

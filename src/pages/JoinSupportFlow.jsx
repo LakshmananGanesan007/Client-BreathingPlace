@@ -1,15 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
-import { base44 } from "@/api/base44Client";
-import { saveStepProgress, upsertUserProfile } from "@/lib/userProfile";
-import { upsertTherapistProfile } from "@/lib/supabaseProfiles";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, ArrowLeft, Heart, Upload, Camera, Loader2, Home, CheckCircle2, Info, AlertCircle, Pencil } from "lucide-react";
+import { Check, ArrowLeft, Heart, Upload, Camera, Loader2, CheckCircle2, Info, AlertCircle, Pencil } from "lucide-react";
 import confetti from "canvas-confetti";
+import { toast } from "sonner";
 
 const TOTAL_STEPS = 9;
 
@@ -19,46 +18,14 @@ const SPECIALIZATIONS = [
   "Addiction Recovery", "Grief & Loss", "OCD", "ADHD", "Other"
 ];
 
-// Extended world languages
 const LANGUAGES_LIST = [
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "ta", label: "Tamil" },
-  { code: "te", label: "Telugu" },
-  { code: "ml", label: "Malayalam" },
-  { code: "kn", label: "Kannada" },
-  { code: "bn", label: "Bengali" },
-  { code: "mr", label: "Marathi" },
-  { code: "gu", label: "Gujarati" },
-  { code: "pa", label: "Punjabi" },
-  { code: "or", label: "Odia" },
-  { code: "as", label: "Assamese" },
-  { code: "ur", label: "Urdu" },
-  { code: "ar", label: "Arabic" },
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "es", label: "Spanish" },
-  { code: "pt", label: "Portuguese" },
-  { code: "it", label: "Italian" },
-  { code: "ru", label: "Russian" },
-  { code: "zh", label: "Chinese (Mandarin)" },
-  { code: "ja", label: "Japanese" },
-  { code: "ko", label: "Korean" },
-  { code: "tr", label: "Turkish" },
-  { code: "nl", label: "Dutch" },
-  { code: "sv", label: "Swedish" },
-  { code: "no", label: "Norwegian" },
-  { code: "da", label: "Danish" },
-  { code: "fi", label: "Finnish" },
-  { code: "pl", label: "Polish" },
-  { code: "he", label: "Hebrew" },
-  { code: "fa", label: "Persian (Farsi)" },
-  { code: "id", label: "Indonesian" },
-  { code: "ms", label: "Malay" },
-  { code: "th", label: "Thai" },
-  { code: "vi", label: "Vietnamese" },
-  { code: "sw", label: "Swahili" },
-  { code: "other", label: "Other" },
+  { code: "en", label: "English" }, { code: "hi", label: "Hindi" }, { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" }, { code: "ml", label: "Malayalam" }, { code: "kn", label: "Kannada" },
+  { code: "bn", label: "Bengali" }, { code: "mr", label: "Marathi" }, { code: "gu", label: "Gujarati" },
+  { code: "pa", label: "Punjabi" }, { code: "or", label: "Odia" }, { code: "as", label: "Assamese" },
+  { code: "ur", label: "Urdu" }, { code: "ar", label: "Arabic" }, { code: "fr", label: "French" },
+  { code: "de", label: "German" }, { code: "es", label: "Spanish" }, { code: "pt", label: "Portuguese" },
+  { code: "zh", label: "Chinese" }, { code: "ja", label: "Japanese" }, { code: "other", label: "Other" },
 ];
 
 const CURRENCIES = [
@@ -66,19 +33,11 @@ const CURRENCIES = [
   { code: "USD", symbol: "$", label: "US Dollar (USD)" },
   { code: "EUR", symbol: "€", label: "Euro (EUR)" },
   { code: "GBP", symbol: "£", label: "British Pound (GBP)" },
-  { code: "AED", symbol: "د.إ", label: "UAE Dirham (AED)" },
-  { code: "SGD", symbol: "S$", label: "Singapore Dollar (SGD)" },
-  { code: "CAD", symbol: "CA$", label: "Canadian Dollar (CAD)" },
-  { code: "AUD", symbol: "A$", label: "Australian Dollar (AUD)" },
 ];
 
 const DAYS_FULL = [
-  { short: "Mon", full: "Monday" },
-  { short: "Tue", full: "Tuesday" },
-  { short: "Wed", full: "Wednesday" },
-  { short: "Thu", full: "Thursday" },
-  { short: "Fri", full: "Friday" },
-  { short: "Sat", full: "Saturday" },
+  { short: "Mon", full: "Monday" }, { short: "Tue", full: "Tuesday" }, { short: "Wed", full: "Wednesday" },
+  { short: "Thu", full: "Thursday" }, { short: "Fri", full: "Friday" }, { short: "Sat", full: "Saturday" },
   { short: "Sun", full: "Sunday" },
 ];
 
@@ -88,7 +47,19 @@ const TIME_HOURS = Array.from({ length: 24 }, (_, i) => {
   return { value: `${String(i).padStart(2, "0")}:00`, label: `${h}:00 ${ampm}` };
 });
 
-// ─────────── Sub-components ───────────
+// Cloudinary Universal Uploader
+const uploadToCloudinary = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Upload failed");
+  return data.secure_url;
+};
 
 function StepIndicator({ current, total }) {
   return (
@@ -139,8 +110,12 @@ function FileUploadField({ label, value, onChange, required, accept = "image/*,.
     const file = e.target.files[0];
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    onChange(file_url);
+    try {
+      const url = await uploadToCloudinary(file);
+      onChange(url);
+    } catch {
+      toast.error(`Failed to upload ${label}`);
+    }
     setUploading(false);
   };
 
@@ -190,8 +165,12 @@ function PhotoUpload({ value, onChange }) {
     const file = e.target.files[0];
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    onChange(file_url);
+    try {
+      const url = await uploadToCloudinary(file);
+      onChange(url);
+    } catch {
+      toast.error("Failed to upload photo");
+    }
     setUploading(false);
   };
   return (
@@ -234,7 +213,6 @@ function Layout({ step, children }) {
   );
 }
 
-// Success Screen Component
 function TherapistSuccessScreen({ navigate }) {
   useEffect(() => {
     const duration = 3000;
@@ -245,31 +223,6 @@ function TherapistSuccessScreen({ navigate }) {
       if (Date.now() < end) requestAnimationFrame(frame);
     };
     frame();
-
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const notes = [
-        { freq: 523.25, time: 0, dur: 0.3 },
-        { freq: 659.25, time: 0.18, dur: 0.3 },
-        { freq: 783.99, time: 0.36, dur: 0.3 },
-        { freq: 1046.5, time: 0.54, dur: 0.5 },
-        { freq: 880, time: 0.72, dur: 0.25 },
-        { freq: 1046.5, time: 0.95, dur: 0.6 },
-      ];
-      notes.forEach(({ freq, time, dur }) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, ctx.currentTime + time);
-        gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + time + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + time + dur);
-        osc.start(ctx.currentTime + time);
-        osc.stop(ctx.currentTime + time + dur + 0.05);
-      });
-    } catch (_) {}
 
     const timer = setTimeout(() => navigate("/therapist"), 5000);
     return () => clearTimeout(timer);
@@ -308,8 +261,6 @@ function TherapistSuccessScreen({ navigate }) {
   );
 }
 
-// ─────────── Main Component ───────────
-
 export default function JoinSupportFlow() {
   const navigate = useNavigate();
   const { user, userProfile, refreshUserProfile } = useAuth();
@@ -317,43 +268,29 @@ export default function JoinSupportFlow() {
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Step 1
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
-
-  // Step 2
   const [qualification, setQualification] = useState("");
   const [license, setLicense] = useState("");
   const [experience, setExperience] = useState("");
   const [specializations, setSpecializations] = useState([]);
-
-  // Step 3 — Languages (extended)
   const [selectedLangs, setSelectedLangs] = useState([]);
   const [langSearch, setLangSearch] = useState("");
   const [otherLangText, setOtherLangText] = useState("");
-
-  // Step 4 — Availability (per-day time slots)
-  const [daySlots, setDaySlots] = useState({}); // { Mon: { from: "09:00", to: "17:00" }, ... }
+  const [daySlots, setDaySlots] = useState({});
   const [timezone, setTimezone] = useState("Asia/Kolkata");
-
-  // Step 5 — Session (all 3 required)
   const SESSION_MODES = ["Chat", "Voice Call", "Video Call"];
   const [fee, setFee] = useState("");
   const [currency, setCurrency] = useState("INR");
-
-  // Step 6
   const [bio, setBio] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
-
-  // Step 7
   const [degreeUrl, setDegreeUrl] = useState("");
   const [licenseUrl, setLicenseUrl] = useState("");
   const [govIdUrl, setGovIdUrl] = useState("");
 
-  // Restore progress
   useEffect(() => {
     if (!userProfile || initialized) return;
     const saved = (userProfile.step_data && typeof userProfile.step_data === "object") ? userProfile.step_data : {};
@@ -407,7 +344,6 @@ export default function JoinSupportFlow() {
   };
 
   const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol || "₹";
-
   const getLangLabel = (code) => LANGUAGES_LIST.find((l) => l.code === code)?.label || code;
   const allSelectedLangLabels = selectedLangs.map(getLangLabel);
   if (selectedLangs.includes("other") && otherLangText) {
@@ -421,13 +357,14 @@ export default function JoinSupportFlow() {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
     try {
-      await saveStepProgress(user.id, user.email, {
-        stepNumber: stepNum,
-        totalSteps: TOTAL_STEPS,
-        stepData,
-        role: "therapist",
-      });
-    } catch (_) {}
+      await supabase.from('user_profiles').update({
+        step_data: stepData,
+        last_completed_step: stepNum,
+        updated_at: new Date().toISOString()
+      }).eq('user_id', user.id);
+    } catch (err) {
+      console.error(err);
+    }
     setSaving(false);
     setStep(stepNum + 1);
   };
@@ -445,8 +382,9 @@ export default function JoinSupportFlow() {
         otherLangText.split(",").map((s) => s.trim()).filter(Boolean).forEach((l) => langLabels.push(l));
       }
 
-      // Save directly to Supabase therapist_profiles (no base44 entities — avoids permission errors)
-      await upsertTherapistProfile(user.id, {
+      // 1. Direct upsert into therapist_profiles
+      const { error: tError } = await supabase.from('therapist_profiles').upsert({
+        user_id: user.id,
         full_name: fullName,
         phone,
         qualification,
@@ -465,42 +403,30 @@ export default function JoinSupportFlow() {
         approval_status: "pending",
         profile_complete: true,
         slug,
-      });
+      }, { onConflict: 'user_id' });
 
-      // Best-effort status update — must not block success screen
-      try {
-        await upsertUserProfile(user.id, user.email, {
-          selected_role: "therapist",
-          profile_status: "completed",
-          approval_status: "pending",
-          last_completed_step: TOTAL_STEPS,
-          total_steps: TOTAL_STEPS,
-        });
-        await refreshUserProfile();
-      } catch (_) {}
+      if (tError) throw tError;
 
-      alert(`✓ Therapist profile saved successfully.\n\nTable Updated:\ntherapist_profiles\n\nProfile Status:\npending_admin_approval`);
+      // 2. Direct update into user_profiles
+      await supabase.from('user_profiles').update({
+        selected_role: "therapist",
+        profile_status: "completed",
+        approval_status: "pending",
+        last_completed_step: TOTAL_STEPS,
+        total_steps: TOTAL_STEPS,
+      }).eq('user_id', user.id);
 
+      await refreshUserProfile();
       setStep(9);
     } catch (err) {
-      console.error("Submit error:", err, err.response?.data);
-      const msg = err.response?.data?.error || err.message;
-      if (msg.includes("Invalid Supabase token") || msg.includes("Missing supabase")) {
-        alert("✕ Authentication session expired. Please log in again.");
-      } else if (msg.includes("Row Level Security") || msg.includes("row-level security")) {
-        alert("✕ Permission denied by RLS policy on therapist_profiles.");
-      } else {
-        alert(`✕ Unable to insert record into therapist_profiles. Details: ${msg}`);
-      }
+      toast.error("Unable to insert record into therapist_profiles. " + err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  // Step 9 — Success
   if (step === 9) return <TherapistSuccessScreen navigate={navigate} />;
 
-  // Step 1
   if (step === 1) return (
     <Layout step={step}>
       <StepCard stepNum={1} title="Let's Get to Know You" subtitle="Please enter your basic details."
@@ -527,7 +453,6 @@ export default function JoinSupportFlow() {
     </Layout>
   );
 
-  // Step 2
   if (step === 2) return (
     <Layout step={step}>
       <StepCard stepNum={2} title="Your Professional Information" subtitle="Help us understand your expertise."
@@ -552,7 +477,6 @@ export default function JoinSupportFlow() {
     </Layout>
   );
 
-  // Step 3 — Languages (world languages + Other)
   if (step === 3) {
     const filtered = LANGUAGES_LIST.filter((l) =>
       l.label.toLowerCase().includes(langSearch.toLowerCase())
@@ -599,7 +523,6 @@ export default function JoinSupportFlow() {
     );
   }
 
-  // Step 4 — Availability (per-day time slots, required)
   if (step === 4) {
     const selectedDays = Object.keys(daySlots);
     return (
@@ -670,9 +593,6 @@ export default function JoinSupportFlow() {
                 <option value="Europe/London">Europe/London (GMT)</option>
                 <option value="Asia/Dubai">Asia/Dubai (GST)</option>
                 <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-                <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
-                <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
-                <option value="Europe/Berlin">Europe/Berlin (CET)</option>
               </select>
             </div>
           </div>
@@ -681,7 +601,6 @@ export default function JoinSupportFlow() {
     );
   }
 
-  // Step 5 — Session preferences (all 3 required, fee only here)
   if (step === 5) return (
     <Layout step={step}>
       <StepCard stepNum={5} title="Session Preferences" subtitle="Communication methods and your session fee."
@@ -723,7 +642,6 @@ export default function JoinSupportFlow() {
     </Layout>
   );
 
-  // Step 6 — Short Bio (improved)
   if (step === 6) {
     const BIO_MIN = 100;
     const BIO_MAX = 500;
@@ -746,11 +664,6 @@ export default function JoinSupportFlow() {
                 <li>Describe what a typical session with you looks like</li>
                 <li>Use a warm, approachable tone</li>
               </ul>
-            </div>
-
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-500 italic">
-              <p className="font-medium text-gray-700 not-italic mb-1">Example:</p>
-              "I am a licensed clinical psychologist with 8 years of experience helping individuals overcome anxiety and depression. Using an evidence-based approach combining CBT and mindfulness, I create a safe, non-judgmental space for healing. I work with adults and young professionals navigating life transitions, burnout, and relationship challenges."
             </div>
 
             <div>
@@ -776,7 +689,6 @@ export default function JoinSupportFlow() {
     );
   }
 
-  // Step 7 — Documents (all 3 required + preview)
   if (step === 7) {
     const allUploaded = degreeUrl && licenseUrl && govIdUrl;
     return (
@@ -794,24 +706,9 @@ export default function JoinSupportFlow() {
               </div>
             )}
 
-            <FileUploadField
-              label="Degree / Education Certificate"
-              value={degreeUrl}
-              onChange={setDegreeUrl}
-              required
-            />
-            <FileUploadField
-              label="Professional License / Certification"
-              value={licenseUrl}
-              onChange={setLicenseUrl}
-              required
-            />
-            <FileUploadField
-              label="Government ID (Aadhaar / Passport)"
-              value={govIdUrl}
-              onChange={setGovIdUrl}
-              required
-            />
+            <FileUploadField label="Degree / Education Certificate" value={degreeUrl} onChange={setDegreeUrl} required />
+            <FileUploadField label="Professional License / Certification" value={licenseUrl} onChange={setLicenseUrl} required />
+            <FileUploadField label="Government ID" value={govIdUrl} onChange={setGovIdUrl} required />
 
             <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
               <span>🔒</span>
@@ -823,7 +720,6 @@ export default function JoinSupportFlow() {
     );
   }
 
-  // Step 8 — Review & Submit
   if (step === 8) {
     const availDays = Object.keys(daySlots);
     const availTimes = Object.entries(daySlots).map(([d, t]) => `${d}: ${t.from}–${t.to}`);
@@ -897,7 +793,6 @@ export default function JoinSupportFlow() {
               <p className="text-xs text-gray-500 mb-4">Please review your information. Click the edit icon to make changes.</p>
 
               <div className="space-y-4">
-                {/* Profile photo */}
                 {photoUrl && (
                   <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
                     <img src={photoUrl} alt="Profile" className="w-12 h-12 rounded-xl object-cover border border-gray-200" />

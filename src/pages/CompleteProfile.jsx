@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
 import { Heart, User, Brain, ArrowRight, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { upsertUserProfile } from "@/lib/userProfile";
 
 export default function CompleteProfile() {
   const { user, userProfile, refreshUserProfile } = useAuth();
@@ -10,41 +10,44 @@ export default function CompleteProfile() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // If user already has a role, skip selection entirely
   useEffect(() => {
     if (!userProfile) return;
     const { selected_role, profile_status } = userProfile;
 
-    // Super admin always goes straight to admin dashboard — no onboarding ever
     if (selected_role === "super_admin" || selected_role === "admin") {
       navigate("/admin", { replace: true });
       return;
     }
 
-    // Profile completed → go directly to dashboard
     if (profile_status === "completed") {
       if (selected_role === "customer") navigate("/dashboard", { replace: true });
       else if (selected_role === "therapist") navigate("/therapist", { replace: true });
       return;
     }
-    // Profile pending → resume onboarding
+    
     if (selected_role === "customer") navigate("/customer-onboarding", { replace: true });
     else if (selected_role === "therapist") navigate("/join-support", { replace: true });
-  }, [userProfile]);
+  }, [userProfile, navigate]);
 
   const handleSelect = async (role) => {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
     setError("");
     try {
-      // Save immediately to Supabase before any redirect
-      await upsertUserProfile(user.id, user.email, {
-        selected_role: role,
-        profile_status: "pending",
-      });
+      // Direct Supabase call bypasses the dead Base44 helper function
+      const { error: dbError } = await supabase
+        .from('user_profiles')
+        .upsert({
+          user_id: user.id,
+          email: user.email,
+          selected_role: role,
+          profile_status: "pending",
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (dbError) throw dbError;
+
       await refreshUserProfile();
-      
-      alert(`✓ Role selection saved successfully.\n\nTable Updated:\nuser_profiles\n\nRole:\n${role}`);
 
       if (role === "customer") {
         navigate("/customer-onboarding");
@@ -52,15 +55,9 @@ export default function CompleteProfile() {
         navigate("/join-support");
       }
     } catch (err) {
-      console.error("[CompleteProfile] Supabase save error:", err, err.response?.data);
-      const msg = err.response?.data?.error || err.message;
-      if (msg.includes("Invalid Supabase token") || msg.includes("Missing supabase")) {
-        setError("✕ Authentication session expired. Please log in again.");
-      } else if (msg.includes("Row Level Security") || msg.includes("row-level security")) {
-        setError("✕ Permission denied by RLS policy on user_profiles.");
-      } else {
-        setError(`✕ User role could not be saved in user_profiles table. Details: ${msg}`);
-      }
+      console.error("[CompleteProfile] Supabase save error:", err);
+      const msg = err.message || "Unknown error occurred";
+      setError(`✕ User role could not be saved. Details: ${msg}`);
     }
     setSaving(false);
   };
@@ -83,7 +80,6 @@ export default function CompleteProfile() {
           )}
 
           <div className="space-y-4">
-            {/* I'm Looking for Therapy */}
             <button
               onClick={() => handleSelect("customer")}
               disabled={saving}
@@ -101,7 +97,6 @@ export default function CompleteProfile() {
               </div>
             </button>
 
-            {/* Join Our Team as Therapist */}
             <button
               onClick={() => handleSelect("therapist")}
               disabled={saving}

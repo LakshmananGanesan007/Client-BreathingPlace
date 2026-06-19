@@ -1,9 +1,8 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/lib/supabaseClient";
 import RoleGuard from "@/components/RoleGuard";
 import EmptyState from "@/components/EmptyState";
-import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +16,6 @@ import { toast } from "sonner";
 const EMPTY_POST = { title: "", slug: "", excerpt: "", content: "", cover_image_url: "", tag: "", read_time: "5 min read", published: false, author_name: "" };
 
 function CoverImageUpload({ value, onChange }) {
-  const fileRef = useRef();
   const [uploading, setUploading] = useState(false);
 
   const handleFile = async (e) => {
@@ -25,18 +23,21 @@ function CoverImageUpload({ value, onChange }) {
     if (!file) return;
     setUploading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const formData = new FormData();
       formData.append("file", file);
-      if (session?.access_token) {
-        formData.append("supabaseToken", session.access_token);
-      }
-      const res = await base44.functions.invoke("uploadFile", formData);
-      if (res?.data?.url) {
-        onChange(res.data.url);
+      formData.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (data.secure_url) {
+        onChange(data.secure_url);
         toast.success("Image uploaded!");
       } else {
-        toast.error("Image upload failed. Please try again.");
+        toast.error("Image upload failed.");
       }
     } catch {
       toast.error("Image upload failed. Please try again.");
@@ -79,17 +80,25 @@ function BlogContent() {
 
   const { data: posts = [], isLoading } = useQuery({
     queryKey: ["blog-posts-admin"],
-    queryFn: () => base44.entities.BlogPost.list("-created_date"),
+    queryFn: async () => {
+      const { data } = await supabase.from('blog_posts').select('*').order('created_at', { ascending: false });
+      return data || [];
+    },
   });
 
   const save = useMutation({
-    mutationFn: (data) => {
+    mutationFn: async (data) => {
       if (!data.slug && data.title) {
         data.slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
       }
-      return dialog?.mode === "edit"
-        ? base44.entities.BlogPost.update(dialog.data.id, data)
-        : base44.entities.BlogPost.create(data);
+      
+      let res;
+      if (dialog?.mode === "edit") {
+        res = await supabase.from('blog_posts').update(data).eq('id', dialog.data.id);
+      } else {
+        res = await supabase.from('blog_posts').insert([data]);
+      }
+      if (res.error) throw res.error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["blog-posts-admin"] });
@@ -99,35 +108,35 @@ function BlogContent() {
       setDialog(null);
       toast.success(msg);
     },
-    onError: () => {
-      toast.error("Unable to save blog changes. Please try again.");
-    }
+    onError: () => toast.error("Unable to save blog changes. Please try again.")
   });
 
   const remove = useMutation({
-    mutationFn: (id) => base44.entities.BlogPost.delete(id),
+    mutationFn: async (id) => {
+      const { error } = await supabase.from('blog_posts').delete().eq('id', id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["blog-posts-admin"] });
       queryClient.invalidateQueries({ queryKey: ["blog-posts"] });
       queryClient.invalidateQueries({ queryKey: ["blog-posts-landing"] });
       toast.success("Post deleted.");
     },
-    onError: () => {
-      toast.error("Unable to save blog changes. Please try again.");
-    }
+    onError: () => toast.error("Unable to save blog changes. Please try again.")
   });
 
   const togglePublish = useMutation({
-    mutationFn: ({ id, published }) => base44.entities.BlogPost.update(id, { published }),
+    mutationFn: async ({ id, published }) => {
+      const { error } = await supabase.from('blog_posts').update({ published }).eq('id', id);
+      if (error) throw error;
+    },
     onSuccess: (_, { published }) => {
       queryClient.invalidateQueries({ queryKey: ["blog-posts-admin"] });
       queryClient.invalidateQueries({ queryKey: ["blog-posts"] });
       queryClient.invalidateQueries({ queryKey: ["blog-posts-landing"] });
       toast.success(published ? "Post published!" : "Post hidden.");
     },
-    onError: () => {
-      toast.error("Unable to save blog changes. Please try again.");
-    }
+    onError: () => toast.error("Unable to save blog changes. Please try again.")
   });
 
   function openCreate() { setForm(EMPTY_POST); setDialog({ mode: "create" }); }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAdminData, updateTherapistMarkup, ADMIN_DATA_KEY } from "@/hooks/useAdminData";
-import { DashboardSkeleton, TableRowSkeleton } from "@/components/SkeletonLoader";
+import { DashboardSkeleton } from "@/components/SkeletonLoader";
 import EmptyState from "@/components/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,14 +31,14 @@ export default function AdminFees() {
 
   const handleEditClick = (t) => {
     setEditingTherapist(t);
-    setMarkupValue((t.platform_markup_percentage || 0).toString());
+    setMarkupValue((t.consultation_fee || 0).toString());
   };
 
   const handleSaveMarkup = async () => {
     if (!editingTherapist) return;
     const markup = parseFloat(markupValue);
     if (isNaN(markup) || markup < 0) {
-      toast.error("Please enter a valid positive percentage");
+      toast.error("Please enter a valid positive value");
       return;
     }
 
@@ -60,7 +60,7 @@ export default function AdminFees() {
       <div>
         <h1 className="font-display text-2xl font-bold">Therapist Fee Management</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Set platform markup percentages for approved therapists. The markup will be automatically applied to the consultation fee.
+          Set base fees for approved therapists.
         </p>
       </div>
 
@@ -79,21 +79,14 @@ export default function AdminFees() {
                 <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                   <tr>
                     <th className="px-4 py-3 rounded-tl-lg">Therapist</th>
-                    <th className="px-4 py-3">Base Fee</th>
-                    <th className="px-4 py-3">Platform Markup</th>
-                    <th className="px-4 py-3">Platform Fee</th>
-                    <th className="px-4 py-3">Final Customer Price</th>
+                    <th className="px-4 py-3">Fee</th>
                     <th className="px-4 py-3 text-right rounded-tr-lg">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {approvedTherapists.map(t => {
                     const baseFee = parseFloat(t.consultation_fee) || 0;
-                    const markupPct = parseFloat(t.platform_markup_percentage) || 0;
-                    const platformFee = baseFee * (markupPct / 100);
-                    const finalPrice = baseFee + platformFee;
                     const currency = t.currency || "INR";
-
                     return (
                       <tr key={t.id || t.user_id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-3">
@@ -102,17 +95,6 @@ export default function AdminFees() {
                         </td>
                         <td className="px-4 py-3 font-medium">
                           {currency} {baseFee.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={markupPct > 0 ? "secondary" : "outline"} className="font-mono text-xs">
-                            {markupPct.toFixed(1)}%
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-primary">
-                          {currency} {platformFee.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 font-semibold">
-                          {currency} {finalPrice.toFixed(2)}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <Button size="sm" variant="outline" onClick={() => handleEditClick(t)} className="gap-1.5 h-8">
@@ -132,7 +114,7 @@ export default function AdminFees() {
       <Dialog open={!!editingTherapist} onOpenChange={() => setEditingTherapist(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adjust Platform Markup</DialogTitle>
+            <DialogTitle>Adjust Therapist Fee</DialogTitle>
           </DialogHeader>
           {editingTherapist && (
             <div className="space-y-4 py-4">
@@ -140,11 +122,10 @@ export default function AdminFees() {
                 <AlertCircle className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                 <div className="text-sm">
                   <p className="font-medium">Therapist: {editingTherapist.full_name}</p>
-                  <p className="text-muted-foreground mt-1">Base Fee: {editingTherapist.currency || "INR"} {editingTherapist.consultation_fee || 0}</p>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="markup">Platform Markup (%)</Label>
+                <Label htmlFor="markup">Fee Amount</Label>
                 <div className="flex items-center gap-2">
                   <Input 
                     id="markup" 
@@ -155,13 +136,8 @@ export default function AdminFees() {
                     onChange={e => setMarkupValue(e.target.value)} 
                     className="max-w-[150px]"
                   />
-                  <span className="text-muted-foreground">%</span>
+                  <span className="text-muted-foreground">{editingTherapist.currency || "INR"}</span>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  The final price will be: {editingTherapist.currency || "INR"} {(
-                    (parseFloat(editingTherapist.consultation_fee) || 0) * (1 + ((parseFloat(markupValue) || 0) / 100))
-                  ).toFixed(2)}
-                </p>
               </div>
             </div>
           )}

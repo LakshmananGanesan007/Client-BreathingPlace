@@ -1,19 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
-import { base44 } from "@/api/base44Client";
-import { saveStepProgress, upsertUserProfile } from "@/lib/userProfile";
-import { upsertCustomerProfile } from "@/lib/supabaseProfiles";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Check, ArrowLeft, Heart, Camera, Loader2, CheckCircle2,
-  MessageCircle, Phone, Video, Pencil, User, MapPin, Activity,
-  Shield, Star, Clock
+  MessageCircle, Phone, Video, User, MapPin, Activity,
+  Shield, Star, Clock, Pencil
 } from "lucide-react";
 import confetti from "canvas-confetti";
+import { toast } from "sonner";
 
 const TOTAL_STEPS = 6;
 
@@ -44,42 +43,34 @@ const REL_STATUSES = ["Single", "In a Relationship", "Married", "Divorced", "Wid
 const PREF_TIMES = ["Morning", "Afternoon", "Evening", "Flexible"];
 
 const LANGUAGES_LIST = [
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "ta", label: "Tamil" },
-  { code: "te", label: "Telugu" },
-  { code: "ml", label: "Malayalam" },
-  { code: "kn", label: "Kannada" },
-  { code: "bn", label: "Bengali" },
-  { code: "mr", label: "Marathi" },
-  { code: "gu", label: "Gujarati" },
-  { code: "pa", label: "Punjabi" },
-  { code: "or", label: "Odia" },
-  { code: "ur", label: "Urdu" },
-  { code: "ar", label: "Arabic" },
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "es", label: "Spanish" },
-  { code: "pt", label: "Portuguese" },
-  { code: "it", label: "Italian" },
-  { code: "ru", label: "Russian" },
-  { code: "zh", label: "Chinese (Mandarin)" },
-  { code: "ja", label: "Japanese" },
-  { code: "ko", label: "Korean" },
-  { code: "tr", label: "Turkish" },
-  { code: "nl", label: "Dutch" },
-  { code: "sv", label: "Swedish" },
-  { code: "id", label: "Indonesian" },
-  { code: "ms", label: "Malay" },
-  { code: "th", label: "Thai" },
-  { code: "vi", label: "Vietnamese" },
-  { code: "sw", label: "Swahili" },
-  { code: "he", label: "Hebrew" },
-  { code: "fa", label: "Persian (Farsi)" },
-  { code: "other", label: "Other" },
+  { code: "en", label: "English" }, { code: "hi", label: "Hindi" }, { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" }, { code: "ml", label: "Malayalam" }, { code: "kn", label: "Kannada" },
+  { code: "bn", label: "Bengali" }, { code: "mr", label: "Marathi" }, { code: "gu", label: "Gujarati" },
+  { code: "pa", label: "Punjabi" }, { code: "or", label: "Odia" }, { code: "ur", label: "Urdu" },
+  { code: "ar", label: "Arabic" }, { code: "fr", label: "French" }, { code: "de", label: "German" },
+  { code: "es", label: "Spanish" }, { code: "pt", label: "Portuguese" }, { code: "it", label: "Italian" },
+  { code: "ru", label: "Russian" }, { code: "zh", label: "Chinese (Mandarin)" }, { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" }, { code: "tr", label: "Turkish" }, { code: "nl", label: "Dutch" },
+  { code: "sv", label: "Swedish" }, { code: "id", label: "Indonesian" }, { code: "ms", label: "Malay" },
+  { code: "th", label: "Thai" }, { code: "vi", label: "Vietnamese" }, { code: "sw", label: "Swahili" },
+  { code: "he", label: "Hebrew" }, { code: "fa", label: "Persian (Farsi)" }, { code: "other", label: "Other" },
 ];
 
 const safe = (val) => (val || "").toLowerCase().replace(/ /g, "_");
+
+// Cloudinary Universal Uploader
+const uploadToCloudinary = async (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Upload failed");
+  return data.secure_url;
+};
 
 // ─── Shared UI ───
 
@@ -161,8 +152,12 @@ function PhotoUpload({ value, onChange }) {
     const file = e.target.files[0];
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    onChange(file_url);
+    try {
+      const url = await uploadToCloudinary(file);
+      onChange(url);
+    } catch {
+      toast.error("Failed to upload photo");
+    }
     setUploading(false);
   };
   return (
@@ -180,7 +175,6 @@ function PhotoUpload({ value, onChange }) {
   );
 }
 
-// Assessment card for Step 3
 function AssessmentCard({ icon: Icon, title, levels, selected, onSelect, colorClass = "text-primary" }) {
   const levelColors = {
     "None": "bg-green-100 text-green-700 border-green-200",
@@ -220,10 +214,8 @@ function AssessmentCard({ icon: Icon, title, levels, selected, onSelect, colorCl
   );
 }
 
-// ─── Success Screen ───
 function CustomerSuccessScreen({ navigate }) {
   useEffect(() => {
-    // Confetti
     const duration = 3000;
     const end = Date.now() + duration;
     const frame = () => {
@@ -232,32 +224,6 @@ function CustomerSuccessScreen({ navigate }) {
       if (Date.now() < end) requestAnimationFrame(frame);
     };
     frame();
-
-    // Pleasant success melody using Web Audio API
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const notes = [
-        { freq: 523.25, time: 0, dur: 0.3 },
-        { freq: 659.25, time: 0.18, dur: 0.3 },
-        { freq: 783.99, time: 0.36, dur: 0.3 },
-        { freq: 1046.5, time: 0.54, dur: 0.5 },
-        { freq: 880, time: 0.72, dur: 0.25 },
-        { freq: 1046.5, time: 0.95, dur: 0.6 },
-      ];
-      notes.forEach(({ freq, time, dur }) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, ctx.currentTime + time);
-        gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + time + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + time + dur);
-        osc.start(ctx.currentTime + time);
-        osc.stop(ctx.currentTime + time + dur + 0.05);
-      });
-    } catch (_) {}
 
     const timer = setTimeout(() => navigate("/dashboard"), 5000);
     return () => clearTimeout(timer);
@@ -296,8 +262,6 @@ function CustomerSuccessScreen({ navigate }) {
   );
 }
 
-// ─── Main Component ───
-
 export default function CustomerOnboarding() {
   const navigate = useNavigate();
   const { user, userProfile, refreshUserProfile } = useAuth();
@@ -305,7 +269,6 @@ export default function CustomerOnboarding() {
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Step 1
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [gender, setGender] = useState("");
   const [dob, setDob] = useState("");
@@ -317,14 +280,12 @@ export default function CustomerOnboarding() {
   const [occupation, setOccupation] = useState("");
   const [relationshipStatus, setRelationshipStatus] = useState("");
 
-  // Step 2
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState("");
   const [prefLanguage, setPrefLanguage] = useState("");
   const [langSearch, setLangSearch] = useState("");
   const [otherLangText, setOtherLangText] = useState("");
 
-  // Step 3
   const [primaryConcern, setPrimaryConcern] = useState("");
   const [problemDesc, setProblemDesc] = useState("");
   const [therapyGoal, setTherapyGoal] = useState("");
@@ -335,14 +296,11 @@ export default function CustomerOnboarding() {
   const [sleepQuality, setSleepQuality] = useState("");
   const [depressionHistory, setDepressionHistory] = useState(null);
 
-  // Step 4
   const [emergencyContact, setEmergencyContact] = useState("");
 
-  // Step 5
   const [prefTherapistGender, setPrefTherapistGender] = useState("");
   const [prefSessionTime, setPrefSessionTime] = useState("");
 
-  // Restore progress
   useEffect(() => {
     if (!userProfile || initialized) return;
     const saved = (userProfile.step_data && typeof userProfile.step_data === "object") ? userProfile.step_data : {};
@@ -385,13 +343,18 @@ export default function CustomerOnboarding() {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
     try {
-      await saveStepProgress(user.id, user.email, { stepNumber: stepNum, totalSteps: TOTAL_STEPS, stepData, role: "customer" });
-    } catch (_) {}
+      await supabase.from('user_profiles').update({
+        step_data: stepData,
+        last_completed_step: stepNum,
+        updated_at: new Date().toISOString()
+      }).eq('user_id', user.id);
+    } catch (err) {
+      console.error(err);
+    }
     setSaving(false);
     setStep(stepNum + 1);
   };
 
-  // Resolved language label from Step 2
   const getLangLabel = () => {
     const langObj = LANGUAGES_LIST.find((l) => l.code === prefLanguage);
     if (!langObj) return prefLanguage || "";
@@ -426,52 +389,32 @@ export default function CustomerOnboarding() {
         profile_complete: true,
       };
 
-      // Save to Supabase customer_profiles table
-      await upsertCustomerProfile(user.id, profileData);
+      const { error: cError } = await supabase.from('customer_profiles').upsert({
+        user_id: user.id,
+        ...profileData
+      }, { onConflict: 'user_id' });
 
-      // Also save to base44 CustomerProfile entity so dashboard reads consistently
-      try {
-        const existing = await base44.entities.CustomerProfile.filter({ user_id: user.id });
-        if (existing.length > 0) {
-          await base44.entities.CustomerProfile.update(existing[0].id, { ...profileData, user_id: user.id });
-        } else {
-          await base44.entities.CustomerProfile.create({ ...profileData, user_id: user.id });
-        }
-      } catch (e) { console.warn("base44 entity sync failed (non-blocking):", e); }
+      if (cError) throw cError;
 
-      // Best-effort status update — must not block success
-      try {
-        await upsertUserProfile(user.id, user.email, {
-          selected_role: "customer",
-          profile_status: "completed",
-          last_completed_step: TOTAL_STEPS,
-          total_steps: TOTAL_STEPS,
-        });
-        await refreshUserProfile();
-      } catch (_) {}
+      await supabase.from('user_profiles').update({
+        selected_role: "customer",
+        profile_status: "completed",
+        last_completed_step: TOTAL_STEPS,
+        total_steps: TOTAL_STEPS,
+        updated_at: new Date().toISOString()
+      }).eq('user_id', user.id);
 
-      alert(`✓ Customer profile saved successfully.\n\nTable Updated:\ncustomer_profiles\n\nProfile Status:\ncompleted`);
-
-      setStep(7); // success screen
+      await refreshUserProfile();
+      setStep(7);
     } catch (err) {
-      console.error("Profile save error:", err, err.response?.data);
-      const msg = err.response?.data?.error || err.message;
-      if (msg.includes("Invalid Supabase token") || msg.includes("Missing supabase")) {
-        alert("✕ Authentication session expired. Please log in again.");
-      } else if (msg.includes("Row Level Security") || msg.includes("row-level security")) {
-        alert("✕ Permission denied by RLS policy on customer_profiles.");
-      } else {
-        alert(`✕ Unable to insert record into customer_profiles. Details: ${msg}`);
-      }
+      toast.error("Unable to insert record into customer_profiles. " + err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  // Success screen
   if (step === 7) return <CustomerSuccessScreen navigate={navigate} />;
 
-  // Step 1 — Personal Info
   if (step === 1) return (
     <Layout step={step}>
       <StepCard stepNum={1} title="Personal Information" subtitle="Tell us a little about yourself."
@@ -537,7 +480,6 @@ export default function CustomerOnboarding() {
     </Layout>
   );
 
-  // Step 2 — Contact & Language
   if (step === 2) {
     const filteredLangs = LANGUAGES_LIST.filter((l) => l.label.toLowerCase().includes(langSearch.toLowerCase()));
     return (
@@ -588,7 +530,6 @@ export default function CustomerOnboarding() {
     );
   }
 
-  // Step 3 — Well-Being Assessment (improved design)
   if (step === 3) return (
     <Layout step={step}>
       <div className="max-w-md mx-auto w-full">
@@ -602,7 +543,6 @@ export default function CustomerOnboarding() {
             <p className="text-xs text-gray-500 mb-4">This information helps your therapist understand your situation better and provide the right support.</p>
 
             <div className="space-y-4">
-              {/* Primary Concern */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
                   <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
@@ -621,14 +561,12 @@ export default function CustomerOnboarding() {
                 </div>
               </div>
 
-              {/* Describe situation */}
               <div>
                 <Label className="text-xs text-gray-600">Describe Your Situation <span className="text-gray-400">(optional)</span></Label>
                 <Textarea className="mt-1 text-sm rounded-lg resize-none" rows={3} value={problemDesc} onChange={(e) => setProblemDesc(e.target.value)} placeholder="Tell us briefly what you're going through..." />
                 <p className="text-[10px] text-gray-400 mt-0.5">Visible to your assigned therapist only.</p>
               </div>
 
-              {/* Therapy Goal */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
                   <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -646,12 +584,10 @@ export default function CustomerOnboarding() {
                 </div>
               </div>
 
-              {/* Assessment cards */}
               <AssessmentCard icon={Activity} title="Anxiety Level" levels={ANXIETY_LEVELS} selected={anxietyLevel} onSelect={setAnxietyLevel} />
               <AssessmentCard icon={Activity} title="Stress Level" levels={STRESS_LEVELS} selected={stressLevel} onSelect={setStressLevel} colorClass="text-orange-500" />
               <AssessmentCard icon={Clock} title="Sleep Quality" levels={SLEEP_QUALITY} selected={sleepQuality} onSelect={setSleepQuality} colorClass="text-indigo-500" />
 
-              {/* Previous therapy */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
                   <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
@@ -671,7 +607,6 @@ export default function CustomerOnboarding() {
                 </div>
               </div>
 
-              {/* Depression history */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
                   <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
@@ -714,7 +649,6 @@ export default function CustomerOnboarding() {
     </Layout>
   );
 
-  // Step 4 — Emergency Contact
   if (step === 4) return (
     <Layout step={step}>
       <StepCard stepNum={4} title="Emergency Contact" subtitle="This helps us reach someone in case of a crisis situation."
@@ -735,7 +669,6 @@ export default function CustomerOnboarding() {
     </Layout>
   );
 
-  // Step 5 — Therapist Preferences (no language, all 3 session types pre-selected)
   if (step === 5) return (
     <Layout step={step}>
       <StepCard stepNum={5} title="Therapist Preferences" subtitle="These help us find the best match for you."
@@ -757,7 +690,6 @@ export default function CustomerOnboarding() {
             </div>
           </div>
 
-          {/* Session types — all 3 always selected */}
           <div>
             <Label className="text-xs mb-2 block">Session Types Available</Label>
             <div className="bg-gradient-to-br from-primary/5 to-green-50 border border-primary/20 rounded-2xl p-4">
@@ -791,7 +723,6 @@ export default function CustomerOnboarding() {
     </Layout>
   );
 
-  // Step 6 — Profile Summary (review before submit)
   if (step === 6) {
     const langLabel = getLangLabel();
     const sections = [
@@ -854,7 +785,6 @@ export default function CustomerOnboarding() {
               <h2 className="font-display text-base font-bold text-gray-900 mb-0.5">Profile Summary</h2>
               <p className="text-xs text-gray-500 mb-4">Review your information before submitting. Click the edit icon on any section to make changes.</p>
 
-              {/* Photo + name */}
               {(photoUrl || fullName) && (
                 <div className="flex items-center gap-3 pb-3 mb-3 border-b border-gray-100">
                   {photoUrl

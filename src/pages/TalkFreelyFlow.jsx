@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, ArrowLeft, Heart, MessageCircle, Phone, Video, ChevronRight, Loader2 } from "lucide-react";
+import { Check, ArrowLeft, Heart, MessageCircle, Phone, Video, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/lib/supabaseClient";
 
 const MOODS = [
   { label: "Feeling Low" },
@@ -105,7 +105,7 @@ function SelectOption({ label, icon, selected, onClick }) {
 
 async function upgradeToCustomer(user) {
   if (!user || user.role === "customer" || user.role === "therapist" || user.role === "admin" || user.role === "super_admin") return;
-  await base44.auth.updateMe({ role: "customer" });
+  await supabase.from('user_profiles').update({ selected_role: 'customer' }).eq('user_id', user.id);
 }
 
 export default function TalkFreelyFlow() {
@@ -118,7 +118,6 @@ export default function TalkFreelyFlow() {
   const [commMode, setCommMode] = useState("");
   const [shareText, setShareText] = useState("");
   const [urgency, setUrgency] = useState("");
-  const [choice, setChoice] = useState(""); // "free" or "professional"
   const [hasUsedFreeSupport, setHasUsedFreeSupport] = useState(false);
   const [isProcessingFree, setIsProcessingFree] = useState(false);
   const [isProcessingPro, setIsProcessingPro] = useState(false);
@@ -126,16 +125,21 @@ export default function TalkFreelyFlow() {
 
   useEffect(() => {
     if (user) {
-      Promise.all([
-        base44.entities.CustomerProfile.filter({ user_id: user.id }),
-        base44.entities.SupportSession.filter({ customer_id: user.id })
-      ]).then(([profiles, sessions]) => {
-        const profileUsed = profiles.length > 0 && profiles[0].free_support_used;
-        const hasSession = sessions.length > 0;
-        if (profileUsed || hasSession) {
-          setHasUsedFreeSupport(true);
+      const checkUsage = async () => {
+        try {
+          const { data: profiles } = await supabase.from('customer_profiles').select('free_support_used').eq('user_id', user.id);
+          const { data: sessions } = await supabase.from('support_sessions').select('id').eq('customer_id', user.id);
+          
+          const profileUsed = profiles?.length > 0 && profiles[0].free_support_used;
+          const hasSession = sessions?.length > 0;
+          if (profileUsed || hasSession) {
+            setHasUsedFreeSupport(true);
+          }
+        } catch (e) {
+          console.warn("Failed to check free support usage", e);
         }
-      }).catch(e => console.warn("Failed to check free support usage", e));
+      };
+      checkUsage();
     }
   }, [user]);
 
@@ -292,36 +296,41 @@ export default function TalkFreelyFlow() {
     setIsProcessingFree(true);
     setErrorMsg("");
     try {
-      // 1. Fire and forget the role upgrade to prevent blocking
       upgradeToCustomer(user).catch(e => console.warn("Failed to upgrade role", e));
       
-      // 2. Try to create profile if doesn't exist (non-blocking)
-      try {
-        base44.entities.CustomerProfile.filter({ user_id: user.id }).then(async (existingProfiles) => {
-          if (existingProfiles.length === 0) {
-            await base44.entities.CustomerProfile.create({
-              user_id: user.id,
-              full_name: user.full_name || user.email,
-              preferred_language: language,
-              main_concerns: supportType ? [supportType] : [],
-              profile_complete: false,
-            });
-          }
-        }).catch(e => console.warn("Profile check failed", e));
-      } catch (e) {
-        console.warn("Failed to initiate profile creation", e);
+      const { data: profiles } = await supabase.from('customer_profiles').select('*').eq('user_id', user.id);
+      if (!profiles || profiles.length === 0) {
+        await supabase.from('customer_profiles').insert({
+          user_id: user.id,
+          full_name: user.full_name || user.email,
+          preferred_language: language,
+          main_concerns: supportType ? [supportType] : [],
+          profile_complete: false,
+        }).catch(e => console.warn("Profile creation failed", e));
       }
       
-      // 3. The critical path: Create a talk freely session and navigate
-      const response = await base44.functions.invoke("createFreeSupportSession", {
+      // Directly insert into the support_sessions table instead of Base44
+      const { data: newSession, error: sessionError } = await supabase.from('support_sessions').insert({
+        customer_id: user.id,
+        customer_name: user.full_name || user.email?.split("@")[0],
+        status: 'pending',
         session_type: supportType || "General",
+      }).select().single();
+
+      if (sessionError) throw sessionError;
+
+      // Ensure the first system message gets attached safely
+      await supabase.from('support_messages').insert({
+        session_id: newSession.id,
+        sender_id: user.id,
+        sender_type: 'customer',
+        message: `Chat Details: Mood: ${mood} | Language: ${language} | Urgency: ${urgency}\nCustomer Note: ${shareText || "None"}`
       });
-      
-      const session = response.data.session;
-      navigate(`/free-chat?session=${session.id}`);
+
+      navigate(`/free-chat?session=${newSession.id}`);
     } catch (error) {
       console.error("Free support error:", error);
-      setErrorMsg(error.response?.data?.error || "Something went wrong creating your session. Please try again.");
+      setErrorMsg("Something went wrong creating your session. Please try again.");
     } finally {
       setIsProcessingFree(false);
     }
@@ -361,7 +370,6 @@ export default function TalkFreelyFlow() {
                 {errorMsg}
               </div>
             )}
-            {/* Free option */}
             {!hasUsedFreeSupport ? (
               <div className="border-2 border-primary rounded-xl p-4 bg-primary/5">
                 <div className="flex items-center justify-between mb-2">
@@ -387,7 +395,6 @@ export default function TalkFreelyFlow() {
 
             <div className="text-center text-xs text-gray-400 font-medium">OR</div>
 
-            {/* Professional option */}
             <div className="border border-gray-200 rounded-xl p-4">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-sm font-bold text-gray-800">Professional Session</p>
@@ -406,7 +413,6 @@ export default function TalkFreelyFlow() {
               </Button>
             </div>
 
-            {/* Payment icons */}
             <div className="pt-1">
               <p className="text-[10px] text-gray-400 mb-2 font-medium">Payment Methods</p>
               <div className="flex gap-2 flex-wrap">
@@ -432,7 +438,6 @@ function Layout({ children, step, title }) {
   return (
     <div className="min-h-screen py-10 px-4" style={{ backgroundColor: "#F0F0E0" }}>
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold mb-2">
             <Heart className="w-3.5 h-3.5" /> Talk Freely Flow

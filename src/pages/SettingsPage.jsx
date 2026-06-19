@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/AuthContext";
-import { base44 } from "@/api/base44Client";
 import { supabase } from "@/lib/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -24,12 +23,11 @@ export default function SettingsPage() {
 
   const dashboardPath = isAdmin ? "/admin" : selectedRole === "therapist" ? "/therapist" : "/dashboard";
 
-  // Customer profile
   const { data: customerProfile } = useQuery({
     queryKey: ["my-customer-profile", user?.id],
     queryFn: async () => {
-      const profiles = await base44.entities.CustomerProfile.filter({ user_id: user?.id });
-      return profiles[0] || null;
+      const { data } = await supabase.from('customer_profiles').select('*').eq('user_id', user.id).single();
+      return data || null;
     },
     enabled: !!user?.id && isCustomer,
   });
@@ -37,8 +35,8 @@ export default function SettingsPage() {
   const { data: therapistProfile } = useQuery({
     queryKey: ["my-therapist-profile-settings", user?.id],
     queryFn: async () => {
-      const profiles = await base44.entities.TherapistProfile.filter({ user_id: user?.id });
-      return profiles[0] || null;
+      const { data } = await supabase.from('therapist_profiles').select('*').eq('user_id', user.id).single();
+      return data || null;
     },
     enabled: !!user?.id && selectedRole === "therapist",
   });
@@ -57,14 +55,16 @@ export default function SettingsPage() {
   }, [customerProfile]);
 
   const updateProfile = useMutation({
-    mutationFn: (data) => base44.entities.CustomerProfile.update(customerProfile.id, data),
+    mutationFn: async (data) => {
+      const { error } = await supabase.from('customer_profiles').update(data).eq('id', customerProfile.id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-customer-profile"] });
       toast.success("Profile updated!");
     },
   });
 
-  // Admin: change email
   const [emailForm, setEmailForm] = useState({ newEmail: "", currentPassword: "" });
   const [emailLoading, setEmailLoading] = useState(false);
 
@@ -74,7 +74,6 @@ export default function SettingsPage() {
       return;
     }
     
-    // Check if email already exists in user_profiles
     const { data: existingUsers } = await supabase
       .from("user_profiles")
       .select("user_id, email")
@@ -87,7 +86,6 @@ export default function SettingsPage() {
     }
     
     setEmailLoading(true);
-    // Re-authenticate first
     const { error: signInErr } = await supabase.auth.signInWithPassword({
       email: user.email,
       password: emailForm.currentPassword,
@@ -98,7 +96,6 @@ export default function SettingsPage() {
       return;
     }
     
-    // Update Supabase Auth email
     const { error: authError } = await supabase.auth.updateUser({ email: emailForm.newEmail });
     if (authError) {
       toast.error(authError.message);
@@ -106,7 +103,6 @@ export default function SettingsPage() {
       return;
     }
     
-    // Update email in user_profiles table
     const { error: dbError } = await supabase
       .from("user_profiles")
       .update({ email: emailForm.newEmail, updated_at: new Date().toISOString() })
@@ -123,7 +119,6 @@ export default function SettingsPage() {
     setEmailLoading(false);
   };
 
-  // Admin: change password
   const [pwForm, setPwForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [pwLoading, setPwLoading] = useState(false);
 
@@ -141,7 +136,6 @@ export default function SettingsPage() {
       return;
     }
     setPwLoading(true);
-    // Re-authenticate first
     const { error: signInErr } = await supabase.auth.signInWithPassword({
       email: user.email,
       password: pwForm.currentPassword,
@@ -179,7 +173,6 @@ export default function SettingsPage() {
         <p className="text-muted-foreground mt-1">Manage your account and preferences</p>
       </div>
 
-      {/* Account Info */}
       <Card>
         <CardHeader>
           <CardTitle className="font-heading text-lg">Account</CardTitle>
@@ -200,7 +193,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Customer profile edit */}
       {customerProfile && (
         <Card>
           <CardHeader>
@@ -211,7 +203,7 @@ export default function SettingsPage() {
             <CloudinaryUpload
               value={profileForm.profile_photo_url || ""}
               onChange={async (url) => {
-                await base44.entities.CustomerProfile.update(customerProfile.id, { profile_photo_url: url });
+                await supabase.from('customer_profiles').update({ profile_photo_url: url }).eq('id', customerProfile.id);
                 queryClient.invalidateQueries({ queryKey: ["my-customer-profile"] });
                 setProfileForm(prev => ({ ...prev, profile_photo_url: url }));
                 toast.success("Photo updated!");
@@ -240,7 +232,6 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Therapist application status */}
       {selectedRole === "therapist" && therapistProfile && (
         <Card>
           <CardHeader>
@@ -269,7 +260,6 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Super Admin / Admin: Change Email */}
       {isAdmin && (
         <Card>
           <CardHeader>
@@ -309,7 +299,6 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Super Admin / Admin: Change Password */}
       {isAdmin && (
         <Card>
           <CardHeader>

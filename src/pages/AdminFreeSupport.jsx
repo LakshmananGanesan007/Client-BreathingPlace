@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/AuthContext";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Clock, CheckCircle2, User, RefreshCw, Trash2, XCircle, Info } from "lucide-react";
+import { Send, Clock, CheckCircle2, User, RefreshCw, Trash2, XCircle, Info, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 export default function AdminFreeSupport() {
   const { user } = useAuth();
@@ -26,20 +27,25 @@ export default function AdminFreeSupport() {
   const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
   const [customerProfileError, setCustomerProfileError] = useState(false);
 
-  useEffect(() => {
-    const fetchSessions = async () => {
-      const res = await base44.entities.SupportSession.filter({}, "-created_date", 50);
-      setSessions(res);
-    };
-    fetchSessions();
+  const fetchSessions = async () => {
+    try {
+      const { data, error } = await supabase.from('support_sessions').select('*').order('created_at', { ascending: false }).limit(100);
+      if (error) throw error;
+      if (data) setSessions(data);
+    } catch (err) {
+      toast.error("❌ Failed to load queue. Database error.");
+    }
+  };
 
-    const unsub = base44.entities.SupportSession.subscribe((event) => {
-      fetchSessions();
-    });
+  useEffect(() => {
+    fetchSessions();
+    const sub = supabase.channel('admin_support_sessions_queue')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_sessions' }, fetchSessions)
+      .subscribe();
 
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => {
-      unsub();
+      supabase.removeChannel(sub);
       clearInterval(interval);
     };
   }, []);
@@ -48,19 +54,32 @@ export default function AdminFreeSupport() {
     if (!activeSessionId) return;
     
     const fetchMessages = async () => {
-      const msgs = await base44.entities.SupportMessage.filter({ session_id: activeSessionId }, "created_date", 100);
-      setMessages(msgs.reverse());
+      const { data } = await supabase.from('support_messages').select('*').eq('session_id', activeSessionId).order('created_at', { ascending: true }).limit(200);
+      if (data) setMessages(data);
     };
+    
     fetchMessages();
+    
+    const sub = supabase.channel(`admin_support_msgs_${activeSessionId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages', filter: `session_id=eq.${activeSessionId}` }, (payload) => {
+        setMessages(prev => {
+          if (prev.find(m => m.id === payload.new.id)) return prev;
+          // Block duplicate optimistic admin messages
+          const isOptimisticDuplicate = payload.new.sender_id === user.id && 
+            prev.find(m => m.message === payload.new.message && String(m.id).startsWith('temp-'));
+          if (isOptimisticDuplicate) return prev;
+          
+          return [...prev, payload.new];
+        });
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'support_messages', filter: `session_id=eq.${activeSessionId}` }, () => {
+        // Clear messages if admin deletes them mid-view
+        setMessages([]);
+      })
+      .subscribe();
 
-    const unsub = base44.entities.SupportMessage.subscribe((event) => {
-      if (event.type === "create" && event.data.session_id === activeSessionId) {
-        setMessages(prev => [...prev, event.data]);
-      }
-    });
-
-    return () => unsub();
-  }, [activeSessionId]);
+    return () => { supabase.removeChannel(sub); };
+  }, [activeSessionId, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -70,74 +89,113 @@ export default function AdminFreeSupport() {
     e.preventDefault();
     if (!newMessage.trim() || !activeSessionId) return;
 
-    const msg = newMessage.trim();
+    const msgText = newMessage.trim();
     setNewMessage("");
 
-    await base44.entities.SupportMessage.create({
+    // Optimistic UI for instant WhatsApp feel
+    const tempId = `temp-${Date.now()}`;
+    const tempMsg = {
+      id: tempId,
       session_id: activeSessionId,
       sender_id: user.id,
       sender_type: "super_admin",
-      message: msg
-    });
+      message: msgText,
+      created_at: new Date().toISOString()
+    };
+    
+    setMessages(prev => [...prev, tempMsg]);
+
+    try {
+      const { data, error } = await supabase.from('support_messages').insert({
+        session_id: activeSessionId,
+        sender_id: user.id,
+        sender_type: "super_admin",
+        message: msgText
+      }).select().single();
+      
+      if (error) throw error;
+      setMessages(prev => prev.map(m => m.id === tempId ? data : m));
+    } catch (err) {
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      toast.error("❌ Failed to send message.");
+    }
   };
 
   const acceptSession = async () => {
     if (!activeSessionId) return;
-    const timerEnd = new Date();
-    timerEnd.setMinutes(timerEnd.getMinutes() + 10);
-    
-    await base44.entities.SupportSession.update(activeSessionId, {
-      status: "active",
-      started_at: new Date().toISOString(),
-      timer_end_at: timerEnd.toISOString(),
-    });
+    try {
+      const timerEnd = new Date();
+      timerEnd.setMinutes(timerEnd.getMinutes() + 10);
+      
+      const { error } = await supabase.from('support_sessions').update({
+        status: "active",
+        started_at: new Date().toISOString(),
+        timer_end_at: timerEnd.toISOString(),
+      }).eq('id', activeSessionId);
+
+      if (error) throw error;
+      toast.success("✅ Customer request accepted successfully. Chat session started.");
+    } catch (err) {
+      toast.error("❌ Failed to create chat session.");
+    }
   };
 
   const closeSession = async () => {
     if (!activeSessionId) return;
-    const s = sessions.find(x => x.id === activeSessionId);
-    
-    // Close session
-    await base44.entities.SupportSession.update(activeSessionId, {
-      status: "completed",
-      ended_at: new Date().toISOString()
-    });
+    try {
+      const s = sessions.find(x => x.id === activeSessionId);
+      
+      await supabase.from('support_sessions').update({
+        status: "completed",
+        ended_at: new Date().toISOString()
+      }).eq('id', activeSessionId);
 
-    // Mark free support used on customer profile
-    const profiles = await base44.entities.CustomerProfile.filter({ user_id: s.customer_id });
-    if (profiles.length > 0) {
-      await base44.entities.CustomerProfile.update(profiles[0].id, {
-        free_support_used: true,
-        free_support_completed_at: new Date().toISOString(),
-        free_support_session_id: activeSessionId,
-        free_support_closed_by: user.id,
-      });
+      const { data: profiles } = await supabase.from('customer_profiles').select('*').eq('user_id', s.customer_id);
+      if (profiles && profiles.length > 0) {
+        await supabase.from('customer_profiles').update({
+          free_support_used: true,
+          free_support_completed_at: new Date().toISOString(),
+          free_support_session_id: activeSessionId,
+          free_support_closed_by: user.id,
+        }).eq('id', profiles[0].id);
+      }
+      
+      toast.success("✅ Chat ended successfully and saved to history.");
+    } catch (err) {
+      toast.error("❌ Database error while ending chat.");
     }
-
-    setActiveSessionId(null);
   };
 
   const cancelSession = async () => {
     if (!activeSessionId) return;
-    await base44.entities.SupportSession.update(activeSessionId, {
-      status: "cancelled",
-      ended_at: new Date().toISOString()
-    });
-    setActiveSessionId(null);
+    try {
+      await supabase.from('support_sessions').update({
+        status: "cancelled",
+        ended_at: new Date().toISOString()
+      }).eq('id', activeSessionId);
+      setActiveSessionId(null);
+      toast.success("✅ Customer request cancelled successfully.");
+    } catch (err) {
+      toast.error("❌ Failed to cancel request.");
+    }
   };
 
   const deleteSession = async () => {
     if (!activeSessionId) return;
     try {
-      await base44.entities.SupportSession.delete(activeSessionId);
+      // ONLY delete the messages to preserve the history record wrapper
+      await supabase.from('support_messages').delete().eq('session_id', activeSessionId);
+      setMessages([]);
+      toast.success("✅ Chat messages permanently deleted. Session record preserved in history.");
     } catch (error) {
-      console.error("Failed to delete session (may already be deleted):", error);
+      toast.error("❌ Failed to delete session history.");
     }
-    setActiveSessionId(null);
   };
 
   const viewCustomerDetails = async () => {
+    const activeSession = sessions.find(s => s.id === activeSessionId);
     if (!activeSession) return;
+
     setShowCustomerDetails(true);
     setCustomerProfileLoading(true);
     setCustomerProfileError(false);
@@ -145,33 +203,26 @@ export default function AdminFreeSupport() {
     setCustomerEmail("");
 
     try {
-      const profiles = await base44.entities.CustomerProfile.filter({ user_id: activeSession.customer_id });
-      if (profiles.length > 0) {
-        setCustomerProfile(profiles[0]);
+      const { data: profileData } = await supabase.from('customer_profiles').select('*').eq('user_id', activeSession.customer_id).single();
+      if (profileData) {
+        setCustomerProfile(profileData);
       } else {
         setCustomerProfileError(true);
       }
       
-      try {
-        const users = await base44.entities.User.filter({ id: activeSession.customer_id });
-        if (users.length > 0) {
-          setCustomerEmail(users[0].email);
-        }
-      } catch (userErr) {
-        console.warn("Could not fetch user email", userErr);
+      const { data: userData } = await supabase.from('user_profiles').select('email').eq('user_id', activeSession.customer_id).single();
+      if (userData) setCustomerEmail(userData.email);
+
+      if (activeSession.status === "pending") {
+        await supabase.from('support_sessions').update({ status: "reviewing" }).eq('id', activeSessionId);
+        toast.info("ℹ Customer notified that you are reviewing their request.");
       }
 
     } catch(e) {
-      console.error(e);
       setCustomerProfileError(true);
+      toast.error("❌ Failed to load customer details.");
     } finally {
       setCustomerProfileLoading(false);
-    }
-    
-    if (activeSession.status === "pending") {
-      await base44.entities.SupportSession.update(activeSessionId, {
-        status: "reviewing"
-      });
     }
   };
 
@@ -181,9 +232,7 @@ export default function AdminFreeSupport() {
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-    }
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
     return age.toString();
   };
 
@@ -199,6 +248,7 @@ export default function AdminFreeSupport() {
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const isPending = activeSession && (activeSession.status === "pending" || activeSession.status === "reviewing");
+  const isActive = activeSession && activeSession.status === "active";
   const isEnded = activeSession && (activeSession.status === "completed" || activeSession.status === "cancelled");
 
   return (
@@ -206,41 +256,46 @@ export default function AdminFreeSupport() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Free Emotional Support Queue</h1>
-          <p className="text-gray-500 text-sm">Manage free support chats in real-time.</p>
+          <p className="text-gray-500 text-sm">Manage free support chats and view history.</p>
         </div>
       </div>
 
       <div className="flex-1 flex gap-6 overflow-hidden">
-        {/* Sidebar */}
+        {/* Sidebar Queues */}
         <div className="w-80 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-            <h2 className="font-semibold text-gray-700">Queues</h2>
-            <div className="flex gap-2">
+          <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex flex-col gap-3">
+            <h2 className="font-semibold text-gray-700">Queues & History</h2>
+            <div className="flex flex-wrap gap-2">
               <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">{sessions.filter(s => s.status === "pending" || s.status === "reviewing").length} Pending</Badge>
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{sessions.filter(s => s.status === "active").length} Active</Badge>
+              <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">{sessions.filter(s => s.status === "completed").length} Completed</Badge>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {sessions.map(s => {
               const diff = s.timer_end_at ? Math.max(0, Math.floor((new Date(s.timer_end_at).getTime() - now) / 1000)) : 0;
-              const isActive = s.status === "active";
-              const isPending = s.status === "pending" || s.status === "reviewing";
+              const sIsActive = s.status === "active";
+              const sIsPending = s.status === "pending" || s.status === "reviewing";
+              const sIsCompleted = s.status === "completed";
+              
               return (
                 <button
                   key={s.id}
                   onClick={() => setActiveSessionId(s.id)}
-                  className={`w-full text-left p-3 rounded-lg border transition-all ${activeSessionId === s.id ? "bg-primary/5 border-primary" : "bg-white border-transparent hover:border-gray-200"}`}
+                  className={`w-full text-left p-3 rounded-lg border transition-all ${activeSessionId === s.id ? "bg-primary/5 border-primary shadow-sm" : "bg-white border-transparent hover:border-gray-200"}`}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-medium text-sm text-gray-900 truncate"><User className="inline w-3 h-3 mr-1"/> {s.customer_name || s.customer_id.slice(0, 8)}</span>
-                    {isActive ? (
-                      <span className={`text-xs font-semibold ${diff === 0 ? "text-red-500" : "text-green-600"}`}>
+                    {sIsActive ? (
+                      <span className={`text-xs font-semibold ${diff <= 0 ? "text-red-500" : "text-green-600"}`}>
                         {Math.floor(diff/60)}:{(diff%60).toString().padStart(2,"0")}
                       </span>
-                    ) : isPending ? (
-                      <Badge className="bg-yellow-100 text-yellow-800 border-0 text-[10px]">Pending</Badge>
+                    ) : sIsPending ? (
+                      <Badge className="bg-yellow-100 text-yellow-800 border-0 text-[10px]">{s.status === 'reviewing' ? 'Reviewing' : 'Pending'}</Badge>
+                    ) : sIsCompleted ? (
+                      <Badge className="bg-gray-100 text-gray-600 border-0 text-[10px]">Completed</Badge>
                     ) : (
-                      <Badge variant="secondary" className="text-[10px]">Closed</Badge>
+                      <Badge variant="secondary" className="text-[10px]">Cancelled</Badge>
                     )}
                   </div>
                   <p className="text-xs text-gray-500 truncate">Type: {s.session_type}</p>
@@ -256,11 +311,14 @@ export default function AdminFreeSupport() {
             <>
               <div className="p-4 border-b flex justify-between items-center bg-gray-50/50">
                 <div>
-                  <h3 className="font-semibold text-gray-900">Chat with {activeSession.customer_name || activeSession.customer_id.slice(0, 8)}</h3>
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    Chat with {activeSession.customer_name || activeSession.customer_id.slice(0, 8)}
+                    {isEnded && <Badge variant="secondary" className="text-[10px]">Read-Only History</Badge>}
+                  </h3>
                   <p className="text-xs text-gray-500">Session Type: {activeSession.session_type}</p>
                 </div>
                 <div className="flex gap-2 items-center">
-                  {!isEnded && !isPending && activeSession?.timer_end_at && (
+                  {isActive && activeSession?.timer_end_at && (
                     <div className="mr-4 px-3 py-1 bg-green-50 text-green-700 rounded-full font-medium text-sm flex items-center gap-1.5">
                       <Clock className="w-4 h-4" />
                       {(() => {
@@ -277,51 +335,69 @@ export default function AdminFreeSupport() {
                       <Button variant="outline" size="sm" onClick={cancelSession} className="text-orange-600 border-orange-200 hover:bg-orange-50">
                         <XCircle className="w-4 h-4 mr-1"/> Cancel
                       </Button>
-                      <Button variant="default" size="sm" onClick={acceptSession} className="bg-green-600 hover:bg-green-700">
-                        <CheckCircle2 className="w-4 h-4 mr-1"/> Accept
+                      <Button variant="default" size="sm" onClick={acceptSession} className="bg-green-600 hover:bg-green-700 shadow-sm">
+                        <CheckCircle2 className="w-4 h-4 mr-1"/> Accept Session
                       </Button>
                     </div>
                   )}
-                  {!isEnded && !isPending && (
-                    <Button variant="destructive" size="sm" onClick={closeSession}>
+                  {(isActive || isEnded) && (
+                    <Button variant="outline" size="sm" onClick={viewCustomerDetails} className="text-blue-600 border-blue-200 hover:bg-blue-50 mr-2">
+                      <Info className="w-4 h-4 mr-1"/> View Details
+                    </Button>
+                  )}
+                  {isActive && (
+                    <Button variant="destructive" size="sm" onClick={closeSession} className="shadow-sm">
                       Close Session
                     </Button>
                   )}
                   {isEnded && (
                     <Button variant="outline" size="sm" onClick={deleteSession} className="text-red-600 hover:bg-red-50 hover:text-red-700">
-                      <Trash2 className="w-4 h-4 mr-1"/> Delete
+                      <Trash2 className="w-4 h-4 mr-1"/> Delete Messages
                     </Button>
                   )}
                 </div>
               </div>
+
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
+                {messages.length === 0 && !isPending && (
+                  <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+                    No messages exist. {isEnded ? "They may have been deleted." : ""}
+                  </div>
+                )}
                 {messages.map(m => {
-                  const isAdmin = m.sender_type === "super_admin";
+                  const isAd = m.sender_type === "super_admin";
                   return (
-                    <div key={m.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isAdmin ? "bg-primary text-white rounded-br-none" : "bg-white border text-gray-800 rounded-bl-none shadow-sm"}`}>
-                        <p className="text-sm whitespace-pre-wrap">{m.message}</p>
+                    <div key={m.id} className={`flex ${isAd ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isAd ? "bg-primary text-white rounded-br-none" : "bg-white border border-gray-200 text-gray-800 rounded-bl-none shadow-sm"}`}>
+                        <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                        <p className={`text-[9px] mt-1 text-right ${isAd ? "text-primary-foreground/70" : "text-gray-400"}`}>
+                          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
                       </div>
                     </div>
                   );
                 })}
                 <div ref={messagesEndRef} />
               </div>
-              <form onSubmit={handleSend} className="p-4 border-t bg-white flex gap-2">
-                <Input 
-                  className="flex-1"
-                  placeholder={isEnded ? "Session completed" : isPending ? "Accept session to chat" : "Type a reply..."}
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  disabled={isEnded || isPending}
-                />
-                <Button type="submit" disabled={!newMessage.trim() || isEnded || isPending}><Send className="w-4 h-4 mr-2"/> Send</Button>
-              </form>
+              
+              {isActive && (
+                <form onSubmit={handleSend} className="p-4 border-t border-gray-100 bg-white flex gap-2">
+                  <Input 
+                    className="flex-1 rounded-full bg-gray-50 border-gray-200 focus-visible:ring-primary"
+                    placeholder="Type a reply..."
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                  />
+                  <Button type="submit" className="rounded-full bg-primary hover:bg-primary/90 shadow-sm" disabled={!newMessage.trim()}>
+                    <Send className="w-4 h-4 mr-2"/> Send
+                  </Button>
+                </form>
+              )}
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-              <MessageCircleIcon />
-              <p className="mt-2 text-sm">Select a session to start chatting</p>
+              <MessageSquare className="w-12 h-12 mb-3 text-gray-300" />
+              <p className="text-sm">Select a session from the queue to view details or chat.</p>
             </div>
           )}
         </div>
@@ -371,7 +447,6 @@ export default function AdminFreeSupport() {
                 </div>
 
                 <div className="space-y-8 max-h-[55vh] overflow-y-auto pr-2 custom-scrollbar">
-                  {/* Basic Info */}
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Basic Information
@@ -388,7 +463,6 @@ export default function AdminFreeSupport() {
                     </div>
                   </div>
 
-                  {/* Mental Health Context */}
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Mental Health Context
@@ -414,7 +488,6 @@ export default function AdminFreeSupport() {
                     </div>
                   </div>
 
-                  {/* Therapy & Preferences */}
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Therapy & Preferences
@@ -448,8 +521,4 @@ export default function AdminFreeSupport() {
       </Dialog>
     </div>
   );
-}
-
-function MessageCircleIcon() {
-  return <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>;
 }

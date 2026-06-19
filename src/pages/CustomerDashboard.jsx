@@ -1,14 +1,13 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
 import { supabase } from "@/lib/supabaseClient";
 import { upsertCustomerProfile } from "@/lib/supabaseProfiles";
 import RoleGuard from "@/components/RoleGuard";
 import {
   Calendar, UserCheck, CreditCard, Clock, ArrowRight,
-  MessageCircle, Star, Zap, Shield, AlertTriangle,
-  Edit3, Save, X, User, Phone, MapPin, HeartHandshake, CheckCircle2
+  MessageCircle, Shield, AlertTriangle,
+  Edit3, Save, X, User, CheckCircle2, HeartHandshake
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -138,7 +137,6 @@ function ProfileSection({ profile, onSaved }) {
                 }
               </div>
             </div>
-            {/* Profile Status */}
             <div className="flex items-center gap-2 pt-1">
               <CheckCircle2 className="w-4 h-4 text-green-500" />
               <span className="text-xs text-green-700 font-medium">Profile Complete</span>
@@ -204,37 +202,8 @@ function DashboardContent() {
   const { data: profile } = useQuery({
     queryKey: ["customer-profile", user?.id],
     queryFn: async () => {
-      function toUUID(id) {
-        if (!id) return id;
-        if (id.includes('-')) return id;
-        const hex = id.replace(/[^a-fA-F0-9]/g, '');
-        if (hex.length === 24) {
-          const p = hex.padEnd(32, '0');
-          return `${p.slice(0,8)}-${p.slice(8,12)}-${p.slice(12,16)}-${p.slice(16,20)}-${p.slice(20)}`;
-        }
-        return id;
-      }
-      
-      // Fetch from Supabase (source of truth for profile completion)
-      const { data: supaProfile } = await supabase
-        .from("customer_profiles")
-        .select("*")
-        .eq("user_id", toUUID(user.id))
-        .maybeSingle();
-
-      // Fetch from Base44 (source of truth for free_support_used managed by admins)
-      const base44Profiles = await base44.entities.CustomerProfile.filter({ user_id: user.id });
-      const b44Profile = base44Profiles[0] || {};
-
-      if (!supaProfile && !b44Profile.id) return null;
-
-      // Merge them, prioritizing Supabase for profile info and Base44 for support flags
-      return {
-        ...supaProfile,
-        ...b44Profile,
-        profile_complete: supaProfile?.profile_complete || b44Profile?.profile_complete || false,
-        free_support_used: b44Profile?.free_support_used || false,
-      };
+      const { data } = await supabase.from("customer_profiles").select("*").eq("user_id", user.id).maybeSingle();
+      return data || null;
     },
     enabled: !!user?.id,
     refetchInterval: 5000,
@@ -242,20 +211,30 @@ function DashboardContent() {
 
   const { data: sessions = [] } = useQuery({
     queryKey: ["customer-sessions", user?.id],
-    queryFn: () => base44.entities.Session.filter({ customer_id: user?.id }, "-session_date", 10),
+    queryFn: async () => {
+      const { data } = await supabase.from("sessions").select("*").eq("customer_id", user.id).order("session_date", { ascending: false }).limit(10);
+      return data || [];
+    },
     enabled: !!user?.id,
   });
 
   const { data: payments = [] } = useQuery({
     queryKey: ["customer-payments", user?.id],
-    queryFn: () => base44.entities.Payment.filter({ customer_id: user?.id }, "-payment_date", 5),
+    queryFn: async () => {
+      const { data } = await supabase.from("payments").select("*").eq("customer_id", user.id).order("payment_date", { ascending: false }).limit(5);
+      return data || [];
+    },
     enabled: !!user?.id,
   });
 
   const { data: freeSessions = [] } = useQuery({
     queryKey: ["customer-free-sessions", user?.id],
-    queryFn: () => base44.entities.SupportSession.filter({ customer_id: user?.id }, "-created_date", 5),
+    queryFn: async () => {
+      const { data } = await supabase.from("support_sessions").select("*").eq("customer_id", user.id).order("created_at", { ascending: false }).limit(10);
+      return data || [];
+    },
     enabled: !!user?.id,
+    refetchInterval: 3000,
   });
 
   const upcomingSessions = sessions.filter(s => s.status === "scheduled" && moment(s.session_date).isSameOrAfter(moment(), "day"));
@@ -263,17 +242,13 @@ function DashboardContent() {
   const totalSpent = payments.filter(p => p.status === "completed").reduce((sum, p) => sum + (p.amount || 0), 0);
   const profileIncomplete = !profile?.profile_complete;
 
-  const activeFreeSession = freeSessions.find(s => {
-    if (s.status === "completed" || s.status === "cancelled") return false;
-    if (s.timer_end_at && new Date(s.timer_end_at) <= new Date()) return false;
-    return true;
-  });
-
+  const activeFreeSession = freeSessions.find(s => s.status === "active" || s.status === "pending" || s.status === "reviewing");
+  const completedFreeSessions = freeSessions.filter(s => s.status === "completed");
+  
   const hasUsedFreeSupport = profile?.free_support_used || freeSessions.length > 0;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      {/* Profile incomplete warning */}
       {profileIncomplete && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -287,7 +262,6 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Active Free Chat Banner */}
       {activeFreeSession && (
         <div className="rounded-xl bg-primary/10 border border-primary/20 p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -295,17 +269,20 @@ function DashboardContent() {
               <MessageCircle className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm font-bold text-primary">You have an active free support session</p>
-              <p className="text-xs text-primary/80 mt-0.5">Don't lose your connection. Return to the chat now.</p>
+              <p className="text-sm font-bold text-primary">
+                {activeFreeSession.status === "active" ? "Your Super Admin chat is live" : "Your free support request is in progress"}
+              </p>
+              <p className="text-xs text-primary/80 mt-0.5">
+                {activeFreeSession.status === "active" ? "Don't lose your connection. Return to the chat now." : "Click below to check your request status."}
+              </p>
             </div>
           </div>
           <Button onClick={() => navigate(`/free-chat?session=${activeFreeSession.id}`)} className="bg-primary hover:bg-primary/90 text-white shadow-sm">
-            Return to Active Chat
+            {activeFreeSession.status === "active" ? "Return to Active Chat" : "View Status"}
           </Button>
         </div>
       )}
 
-      {/* Header */}
       <div>
         <h1 className="font-display text-2xl sm:text-3xl font-bold">
           Welcome back, {profile?.full_name?.split(" ")[0] || user?.email?.split("@")[0]} 👋
@@ -313,7 +290,6 @@ function DashboardContent() {
         <p className="text-muted-foreground mt-1 text-sm">Your mental wellness overview</p>
       </div>
 
-      {/* Primary Action Buttons */}
       <div className={`grid gap-4 ${hasUsedFreeSupport ? "grid-cols-1 max-w-md" : "sm:grid-cols-2"}`}>
         {!hasUsedFreeSupport && (
           <button
@@ -357,7 +333,6 @@ function DashboardContent() {
         <p className="text-center text-xs text-amber-700 -mt-3 font-medium">Complete your profile above to unlock these features.</p>
       )}
 
-      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { icon: Calendar, label: "Upcoming Sessions", value: upcomingSessions.length },
@@ -377,7 +352,6 @@ function DashboardContent() {
         ))}
       </div>
 
-      {/* Profile Section */}
       {profile?.profile_complete && (
         <ProfileSection
           profile={profile}
@@ -385,7 +359,35 @@ function DashboardContent() {
         />
       )}
 
-      {/* Upcoming Sessions */}
+      {/* Completed Free Sessions History */}
+      {completedFreeSessions.length > 0 && (
+        <div className="bg-card rounded-xl border border-border mt-6">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h2 className="font-heading text-base font-semibold">Completed Free Sessions</h2>
+          </div>
+          <div className="p-5 space-y-3">
+            {completedFreeSessions.map(session => (
+              <div key={session.id} className="flex items-center justify-between p-4 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <MessageCircle className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Free Emotional Support</p>
+                    <p className="text-xs text-muted-foreground">
+                      {moment(session.created_at).format("ddd, MMM D, YYYY")} · {moment(session.created_at).format("h:mm A")}
+                    </p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" className="text-xs gap-1.5 border-gray-300" onClick={() => navigate(`/free-chat?session=${session.id}`)}>
+                  View Chat <ArrowRight className="w-3 h-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {upcomingSessions.length > 0 && (
         <div className="bg-card rounded-xl border border-border">
           <div className="flex items-center justify-between p-5 border-b border-border">

@@ -3,13 +3,14 @@ import { appParams } from '@/lib/app-params';
 import { supabase } from '@/lib/supabaseClient';
 
 const { appId, functionsVersion, appBaseUrl } = appParams;
+const useApiProxy = Boolean(appBaseUrl);
 
 // Create base44 client - token will be set dynamically from Supabase session
 export const base44 = createClient({
   appId,
   token: appParams.token, // fallback for direct base44 logins
   functionsVersion,
-  serverUrl: '',
+  serverUrl: useApiProxy ? '' : undefined,
   requiresAuth: false,
   appBaseUrl
 });

@@ -1,8 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useAdminData, ADMIN_DATA_KEY } from "@/hooks/useAdminData";
-import { DashboardSkeleton, TableRowSkeleton } from "@/components/SkeletonLoader";
+import { useAdminData } from "@/hooks/useAdminData";
+import { DashboardSkeleton } from "@/components/SkeletonLoader";
 import EmptyState from "@/components/EmptyState";
-import { Badge } from "@/components/ui/badge";
 import { IndianRupee, TrendingUp, User, CreditCard } from "lucide-react";
 import moment from "moment";
 
