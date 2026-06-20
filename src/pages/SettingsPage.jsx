@@ -5,12 +5,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { LogOut, Save, ArrowLeft, CheckCircle, Clock, XCircle, ShieldCheck } from "lucide-react";
+import { LogOut, Save, ArrowLeft, CheckCircle, Clock, XCircle, ShieldCheck, FileText, Loader2 } from "lucide-react";
 import CloudinaryUpload from "@/components/CloudinaryUpload";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 
 export default function SettingsPage() {
   const { user, userProfile } = useAuth();
@@ -65,6 +67,7 @@ export default function SettingsPage() {
     },
   });
 
+  // Authentication Settings
   const [emailForm, setEmailForm] = useState({ newEmail: "", currentPassword: "" });
   const [emailLoading, setEmailLoading] = useState(false);
 
@@ -161,8 +164,69 @@ export default function SettingsPage() {
     rejected: { label: "Rejected", color: "bg-red-100 text-red-800", icon: XCircle },
   };
 
+  // T&C Management State
+  const [tcAudience, setTcAudience] = useState("customer");
+  const [tcContent, setTcContent] = useState("");
+  const [tcVersion, setTcVersion] = useState("v1.0.0");
+  const [tcPublished, setTcPublished] = useState(false);
+  const [tcSaving, setTcSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    async function loadTC() {
+      try {
+        const { data, error } = await supabase.from('terms_and_conditions')
+          .select('*')
+          .eq('audience_type', tcAudience)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (error) throw error;
+
+        if (data) {
+          setTcContent(data.content);
+          setTcVersion(data.version);
+          setTcPublished(data.is_published);
+        } else {
+          setTcContent("");
+          setTcVersion("v1.0.0");
+          setTcPublished(false);
+        }
+      } catch (err) {
+        console.error("Failed to load T&C", err);
+      }
+    }
+    loadTC();
+  }, [tcAudience, isAdmin]);
+
+  const handleSaveTC = async () => {
+    setTcSaving(true);
+    try {
+      if (tcPublished) {
+        await supabase.from('terms_and_conditions')
+          .update({ is_published: false })
+          .eq('audience_type', tcAudience);
+      }
+      
+      const { error } = await supabase.from('terms_and_conditions').insert({
+        audience_type: tcAudience,
+        content: tcContent,
+        version: tcVersion,
+        is_published: tcPublished
+      });
+
+      if (error) throw error;
+      toast.success(`✅ ${tcAudience} Terms & Conditions saved successfully!`);
+    } catch (error) {
+      toast.error("❌ Failed to save Terms & Conditions. Ensure the database policies are set up correctly.");
+    } finally {
+      setTcSaving(false);
+    }
+  };
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6 pb-10">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate(dashboardPath)} className="gap-2 -ml-2">
           <ArrowLeft className="w-4 h-4" /> Back to Dashboard
@@ -192,6 +256,76 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Admin T&C Management */}
+      {isAdmin && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="font-heading text-lg">Terms & Conditions Management</CardTitle>
+                <CardDescription>Create and publish legal agreements for onboarding flows.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-xs mb-1 block">Target Audience</Label>
+              <div className="flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant={tcAudience === 'customer' ? "default" : "outline"} 
+                  onClick={() => setTcAudience('customer')}
+                  className={tcAudience === 'customer' ? "bg-primary" : ""}
+                >
+                  Customers
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant={tcAudience === 'therapist' ? "default" : "outline"} 
+                  onClick={() => setTcAudience('therapist')}
+                  className={tcAudience === 'therapist' ? "bg-primary" : ""}
+                >
+                  Therapists
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">Version Number</Label>
+                <Input 
+                  value={tcVersion} 
+                  onChange={(e) => setTcVersion(e.target.value)} 
+                  placeholder="e.g. v1.1.0"
+                  className="mt-1 bg-white" 
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <div className="flex items-center gap-3">
+                  <Switch checked={tcPublished} onCheckedChange={setTcPublished} />
+                  <Label className="text-xs font-semibold">Publish this version immediately</Label>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">T&C Content (Shown during onboarding)</Label>
+              <Textarea 
+                className="mt-1 h-64 font-mono text-xs bg-white" 
+                value={tcContent} 
+                onChange={(e) => setTcContent(e.target.value)} 
+                placeholder="Enter the full terms and conditions text here..." 
+              />
+            </div>
+
+            <Button onClick={handleSaveTC} disabled={tcSaving || !tcContent.trim()} className="gap-2 w-full sm:w-auto">
+              {tcSaving ? <><Loader2 className="w-4 h-4 animate-spin"/> Saving...</> : <><Save className="w-4 h-4" /> Save New Document</>}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {customerProfile && (
         <Card>
@@ -261,91 +395,90 @@ export default function SettingsPage() {
       )}
 
       {isAdmin && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-primary" />
-              <div>
-                <CardTitle className="font-heading text-lg">Change Email Address</CardTitle>
-                <CardDescription>Update the email used to sign in</CardDescription>
+        <>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-primary" />
+                <div>
+                  <CardTitle className="font-heading text-lg">Change Email Address</CardTitle>
+                  <CardDescription>Update the email used to sign in</CardDescription>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Current Password <span className="text-destructive">*</span></Label>
-              <Input
-                type="password"
-                className="mt-1"
-                value={emailForm.currentPassword}
-                onChange={e => setEmailForm(prev => ({ ...prev, currentPassword: e.target.value }))}
-                placeholder="Enter current password to verify identity"
-              />
-            </div>
-            <div>
-              <Label>New Email Address <span className="text-destructive">*</span></Label>
-              <Input
-                type="email"
-                className="mt-1"
-                value={emailForm.newEmail}
-                onChange={e => setEmailForm(prev => ({ ...prev, newEmail: e.target.value }))}
-                placeholder="new@email.com"
-              />
-            </div>
-            <Button onClick={handleEmailChange} disabled={emailLoading} className="gap-2">
-              <Save className="w-4 h-4" /> {emailLoading ? "Updating..." : "Update Email"}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {isAdmin && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-primary" />
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div>
-                <CardTitle className="font-heading text-lg">Change Password</CardTitle>
-                <CardDescription>Update your account password</CardDescription>
+                <Label>Current Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  className="mt-1"
+                  value={emailForm.currentPassword}
+                  onChange={e => setEmailForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                  placeholder="Enter current password to verify identity"
+                />
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Current Password <span className="text-destructive">*</span></Label>
-              <Input
-                type="password"
-                className="mt-1"
-                value={pwForm.currentPassword}
-                onChange={e => setPwForm(prev => ({ ...prev, currentPassword: e.target.value }))}
-                placeholder="Enter your current password"
-              />
-            </div>
-            <div>
-              <Label>New Password <span className="text-destructive">*</span></Label>
-              <Input
-                type="password"
-                className="mt-1"
-                value={pwForm.newPassword}
-                onChange={e => setPwForm(prev => ({ ...prev, newPassword: e.target.value }))}
-                placeholder="At least 8 characters"
-              />
-            </div>
-            <div>
-              <Label>Confirm New Password <span className="text-destructive">*</span></Label>
-              <Input
-                type="password"
-                className="mt-1"
-                value={pwForm.confirmPassword}
-                onChange={e => setPwForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                placeholder="Re-enter new password"
-              />
-            </div>
-            <Button onClick={handlePasswordChange} disabled={pwLoading} className="gap-2">
-              <Save className="w-4 h-4" /> {pwLoading ? "Updating..." : "Update Password"}
-            </Button>
-          </CardContent>
-        </Card>
+              <div>
+                <Label>New Email Address <span className="text-destructive">*</span></Label>
+                <Input
+                  type="email"
+                  className="mt-1"
+                  value={emailForm.newEmail}
+                  onChange={e => setEmailForm(prev => ({ ...prev, newEmail: e.target.value }))}
+                  placeholder="new@email.com"
+                />
+              </div>
+              <Button onClick={handleEmailChange} disabled={emailLoading} className="gap-2">
+                <Save className="w-4 h-4" /> {emailLoading ? "Updating..." : "Update Email"}
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-primary" />
+                <div>
+                  <CardTitle className="font-heading text-lg">Change Password</CardTitle>
+                  <CardDescription>Update your account password</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Current Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  className="mt-1"
+                  value={pwForm.currentPassword}
+                  onChange={e => setPwForm(prev => ({ ...prev, currentPassword: e.target.value }))}
+                  placeholder="Enter your current password"
+                />
+              </div>
+              <div>
+                <Label>New Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  className="mt-1"
+                  value={pwForm.newPassword}
+                  onChange={e => setPwForm(prev => ({ ...prev, newPassword: e.target.value }))}
+                  placeholder="At least 8 characters"
+                />
+              </div>
+              <div>
+                <Label>Confirm New Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  className="mt-1"
+                  value={pwForm.confirmPassword}
+                  onChange={e => setPwForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  placeholder="Re-enter new password"
+                />
+              </div>
+              <Button onClick={handlePasswordChange} disabled={pwLoading} className="gap-2">
+                <Save className="w-4 h-4" /> {pwLoading ? "Updating..." : "Update Password"}
+              </Button>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       <Separator />

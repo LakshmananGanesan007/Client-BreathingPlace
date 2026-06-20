@@ -9,12 +9,12 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Check, ArrowLeft, Heart, Camera, Loader2, CheckCircle2,
   MessageCircle, Phone, Video, User, MapPin, Activity,
-  Shield, Star, Clock, Pencil
+  Shield, Star, Clock, Pencil, Upload // Added missing Upload import!
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7; 
 
 const GENDERS = ["Male", "Female", "Non-binary", "Prefer not to say"];
 const COUNTRIES = [
@@ -58,7 +58,6 @@ const LANGUAGES_LIST = [
 
 const safe = (val) => (val || "").toLowerCase().replace(/ /g, "_");
 
-// Cloudinary Universal Uploader
 const uploadToCloudinary = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -71,8 +70,6 @@ const uploadToCloudinary = async (file) => {
   if (!data.secure_url) throw new Error("Upload failed");
   return data.secure_url;
 };
-
-// ─── Shared UI ───
 
 function StepIndicator({ current, total }) {
   return (
@@ -301,6 +298,10 @@ export default function CustomerOnboarding() {
   const [prefTherapistGender, setPrefTherapistGender] = useState("");
   const [prefSessionTime, setPrefSessionTime] = useState("");
 
+  // T&C State
+  const [tcAccepted, setTcAccepted] = useState(false);
+  const [tcContent, setTcContent] = useState("");
+
   useEffect(() => {
     if (!userProfile || initialized) return;
     const saved = (userProfile.step_data && typeof userProfile.step_data === "object") ? userProfile.step_data : {};
@@ -337,14 +338,35 @@ export default function CustomerOnboarding() {
     setInitialized(true);
   }, [userProfile, initialized]);
 
+  // Fetch T&C dynamically
+  useEffect(() => {
+    async function fetchTc() {
+      const { data } = await supabase.from('terms_and_conditions')
+        .select('content').eq('audience_type', 'customer').eq('is_published', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (data) setTcContent(data.content);
+      else setTcContent("Please agree to our standard platform terms and conditions.");
+    }
+    fetchTc();
+  }, []);
+
   const back = () => { if (step === 1) navigate("/complete-profile"); else setStep((s) => s - 1); };
 
-  const continueStep = async (stepNum, stepData) => {
+  const continueStep = async (stepNum) => {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
+
+    const mergedStepData = {
+      fullName, gender, dob, country, state, city, timezone, photoUrl, occupation, relationshipStatus,
+      email, phone, prefLanguage, otherLangText,
+      primaryConcern, problemDesc, therapyGoal, previousTherapy, currentMedication, anxietyLevel, stressLevel, sleepQuality, depressionHistory,
+      emergencyContact,
+      prefTherapistGender, prefSessionTime
+    };
+
     try {
       await supabase.from('user_profiles').update({
-        step_data: stepData,
+        step_data: mergedStepData,
         last_completed_step: stepNum,
         updated_at: new Date().toISOString()
       }).eq('user_id', user.id);
@@ -405,7 +427,7 @@ export default function CustomerOnboarding() {
       }).eq('user_id', user.id);
 
       await refreshUserProfile();
-      setStep(7);
+      setStep(8); // Success step
     } catch (err) {
       toast.error("Unable to insert record into customer_profiles. " + err.message);
     } finally {
@@ -413,14 +435,14 @@ export default function CustomerOnboarding() {
     }
   };
 
-  if (step === 7) return <CustomerSuccessScreen navigate={navigate} />;
+  if (step === 8) return <CustomerSuccessScreen navigate={navigate} />;
 
   if (step === 1) return (
     <Layout step={step}>
       <StepCard stepNum={1} title="Personal Information" subtitle="Tell us a little about yourself."
         onBack={back} hideBack
-        onContinue={() => continueStep(1, { fullName, gender, dob, country, state, city, timezone, photoUrl, occupation, relationshipStatus })}
-        continueDisabled={saving || !fullName || !gender || !country}
+        onContinue={() => continueStep(1)}
+        continueDisabled={saving || !fullName || !gender || !country || !photoUrl}
         continueLabel={saving ? "Saving..." : "Continue"}>
         <div className="space-y-3">
           <div>
@@ -428,8 +450,9 @@ export default function CustomerOnboarding() {
             <Input className="mt-1 text-sm h-9 rounded-lg" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" />
           </div>
           <div>
-            <Label className="text-xs">Profile Photo</Label>
+            <Label className="text-xs">Profile Photo *</Label>
             <div className="mt-1"><PhotoUpload value={photoUrl} onChange={setPhotoUrl} /></div>
+            {!photoUrl && <p className="text-[10px] text-red-500 mt-1">Profile photo is required.</p>}
           </div>
           <div>
             <Label className="text-xs">Gender *</Label>
@@ -486,7 +509,7 @@ export default function CustomerOnboarding() {
       <Layout step={step}>
         <StepCard stepNum={2} title="Contact & Language" subtitle="How can we reach you and what language do you prefer?"
           onBack={back}
-          onContinue={() => continueStep(2, { email, phone, prefLanguage, otherLangText })}
+          onContinue={() => continueStep(2)}
           continueDisabled={saving || !email || !phone || !prefLanguage}
           continueLabel={saving ? "Saving..." : "Continue"}>
           <div className="space-y-3">
@@ -638,7 +661,7 @@ export default function CustomerOnboarding() {
             </Button>
             <Button
               className="flex-1 rounded-full bg-primary text-white font-semibold text-sm" size="sm"
-              onClick={() => continueStep(3, { primaryConcern, problemDesc, therapyGoal, previousTherapy, currentMedication, anxietyLevel, stressLevel, sleepQuality, depressionHistory })}
+              onClick={() => continueStep(3)}
               disabled={saving || !primaryConcern || previousTherapy === null}
             >
               {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving...</> : "Continue"}
@@ -653,7 +676,7 @@ export default function CustomerOnboarding() {
     <Layout step={step}>
       <StepCard stepNum={4} title="Emergency Contact" subtitle="This helps us reach someone in case of a crisis situation."
         onBack={back}
-        onContinue={() => continueStep(4, { emergencyContact })}
+        onContinue={() => continueStep(4)}
         continueDisabled={saving}
         continueLabel={saving ? "Saving..." : "Continue"}>
         <div className="space-y-3">
@@ -673,7 +696,7 @@ export default function CustomerOnboarding() {
     <Layout step={step}>
       <StepCard stepNum={5} title="Therapist Preferences" subtitle="These help us find the best match for you."
         onBack={back}
-        onContinue={() => continueStep(5, { prefTherapistGender, prefSessionTime })}
+        onContinue={() => continueStep(5)}
         continueDisabled={saving}
         continueLabel={saving ? "Saving..." : "Continue"}>
         <div className="space-y-4">
@@ -828,13 +851,45 @@ export default function CustomerOnboarding() {
               </Button>
               <Button
                 className="flex-1 rounded-full bg-primary text-white font-semibold text-sm" size="sm"
-                onClick={handleSubmit} disabled={saving}
+                onClick={() => continueStep(6)} disabled={saving}
               >
-                {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving...</> : "Submit Profile"}
+                Continue to Terms
               </Button>
             </div>
           </div>
         </div>
+      </Layout>
+    );
+  }
+
+  // Step 7 — Terms & Conditions
+  if (step === 7) {
+    return (
+      <Layout step={step}>
+        <StepCard stepNum={7} title="Terms & Conditions" subtitle="Please read and accept our platform terms before submitting."
+          onBack={back}
+          onContinue={handleSubmit}
+          continueDisabled={saving || !tcAccepted}
+          continueLabel={saving ? "Submitting..." : "Accept & Submit Profile"}>
+          
+          <div className="space-y-4">
+            <div className="h-64 overflow-y-auto bg-gray-50 p-4 border border-gray-200 rounded-xl text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {tcContent ? tcContent : <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Loading terms...</div>}
+            </div>
+
+            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
+              <input 
+                type="checkbox" 
+                className="mt-0.5 w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+                checked={tcAccepted} 
+                onChange={e => setTcAccepted(e.target.checked)} 
+              />
+              <span className="text-sm font-medium text-gray-800">
+                I have read and agree to the Customer Terms & Conditions.
+              </span>
+            </label>
+          </div>
+        </StepCard>
       </Layout>
     );
   }

@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, ArrowLeft, Heart, Upload, Camera, Loader2, CheckCircle2, Info, AlertCircle, Pencil } from "lucide-react";
+import { 
+  Check, ArrowLeft, Heart, Upload, Camera, Loader2, CheckCircle2, 
+  Info, AlertCircle, Pencil, MessageCircle, Phone, Video 
+} from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 
@@ -47,7 +50,6 @@ const TIME_HOURS = Array.from({ length: 24 }, (_, i) => {
   return { value: `${String(i).padStart(2, "0")}:00`, label: `${h}:00 ${ampm}` };
 });
 
-// Cloudinary Universal Uploader
 const uploadToCloudinary = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -282,14 +284,23 @@ export default function JoinSupportFlow() {
   const [otherLangText, setOtherLangText] = useState("");
   const [daySlots, setDaySlots] = useState({});
   const [timezone, setTimezone] = useState("Asia/Kolkata");
+  
+  // Split Pricing State
   const SESSION_MODES = ["Chat", "Voice Call", "Video Call"];
-  const [fee, setFee] = useState("");
+  const [chatPrice, setChatPrice] = useState("");
+  const [voicePrice, setVoicePrice] = useState("");
+  const [videoPrice, setVideoPrice] = useState("");
   const [currency, setCurrency] = useState("INR");
+  
   const [bio, setBio] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [degreeUrl, setDegreeUrl] = useState("");
   const [licenseUrl, setLicenseUrl] = useState("");
   const [govIdUrl, setGovIdUrl] = useState("");
+
+  // T&C State
+  const [tcAccepted, setTcAccepted] = useState(false);
+  const [tcContent, setTcContent] = useState("");
 
   useEffect(() => {
     if (!userProfile || initialized) return;
@@ -309,7 +320,9 @@ export default function JoinSupportFlow() {
     if (saved.otherLangText) setOtherLangText(saved.otherLangText);
     if (saved.daySlots) setDaySlots(saved.daySlots);
     if (saved.timezone) setTimezone(saved.timezone);
-    if (saved.fee) setFee(saved.fee);
+    if (saved.chatPrice) setChatPrice(saved.chatPrice);
+    if (saved.voicePrice) setVoicePrice(saved.voicePrice);
+    if (saved.videoPrice) setVideoPrice(saved.videoPrice);
     if (saved.currency) setCurrency(saved.currency);
     if (saved.bio) setBio(saved.bio);
     if (saved.photoUrl) setPhotoUrl(saved.photoUrl);
@@ -317,9 +330,21 @@ export default function JoinSupportFlow() {
     if (saved.licenseUrl) setLicenseUrl(saved.licenseUrl);
     if (saved.govIdUrl) setGovIdUrl(saved.govIdUrl);
 
-    if (lastStep > 0 && lastStep < 8) setStep(lastStep + 1);
+    if (lastStep > 0 && lastStep < TOTAL_STEPS) setStep(lastStep + 1);
     setInitialized(true);
   }, [userProfile, initialized]);
+
+  // Fetch T&C dynamically
+  useEffect(() => {
+    async function fetchTc() {
+      const { data } = await supabase.from('terms_and_conditions')
+        .select('content').eq('audience_type', 'therapist').eq('is_published', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (data) setTcContent(data.content);
+      else setTcContent("Please agree to our standard platform terms and conditions.");
+    }
+    fetchTc();
+  }, []);
 
   const toggleLang = (code) => setSelectedLangs((prev) =>
     prev.includes(code) ? prev.filter((l) => l !== code) : [...prev, code]
@@ -353,12 +378,24 @@ export default function JoinSupportFlow() {
 
   const back = () => { if (step === 1) navigate("/complete-profile"); else setStep((s) => s - 1); };
 
-  const continueStep = async (stepNum, stepData) => {
+  // THE FIX: Merge all state data so nothing gets lost between steps
+  const continueStep = async (stepNum) => {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
+
+    const mergedStepData = {
+      fullName, email, phone, country, city,
+      qualification, license, experience, specializations,
+      selectedLangs, otherLangText,
+      daySlots, timezone,
+      chatPrice, voicePrice, videoPrice, currency,
+      bio, photoUrl,
+      degreeUrl, licenseUrl, govIdUrl
+    };
+
     try {
       await supabase.from('user_profiles').update({
-        step_data: stepData,
+        step_data: mergedStepData,
         last_completed_step: stepNum,
         updated_at: new Date().toISOString()
       }).eq('user_id', user.id);
@@ -382,7 +419,7 @@ export default function JoinSupportFlow() {
         otherLangText.split(",").map((s) => s.trim()).filter(Boolean).forEach((l) => langLabels.push(l));
       }
 
-      // 1. Direct upsert into therapist_profiles
+      // Update to database with split pricing
       const { error: tError } = await supabase.from('therapist_profiles').upsert({
         user_id: user.id,
         full_name: fullName,
@@ -398,7 +435,9 @@ export default function JoinSupportFlow() {
         gov_id_url: govIdUrl,
         certificates_url: degreeUrl,
         license_url: licenseUrl,
-        consultation_fee: parseInt(fee) || 0,
+        chat_price: parseInt(chatPrice) || 0,
+        voice_price: parseInt(voicePrice) || 0,
+        video_price: parseInt(videoPrice) || 0,
         currency,
         approval_status: "pending",
         profile_complete: true,
@@ -407,7 +446,6 @@ export default function JoinSupportFlow() {
 
       if (tError) throw tError;
 
-      // 2. Direct update into user_profiles
       await supabase.from('user_profiles').update({
         selected_role: "therapist",
         profile_status: "completed",
@@ -417,7 +455,7 @@ export default function JoinSupportFlow() {
       }).eq('user_id', user.id);
 
       await refreshUserProfile();
-      setStep(9);
+      setStep(10); // Success Step
     } catch (err) {
       toast.error("Unable to insert record into therapist_profiles. " + err.message);
     } finally {
@@ -425,13 +463,13 @@ export default function JoinSupportFlow() {
     }
   };
 
-  if (step === 9) return <TherapistSuccessScreen navigate={navigate} />;
+  if (step === 10) return <TherapistSuccessScreen navigate={navigate} />;
 
   if (step === 1) return (
     <Layout step={step}>
       <StepCard stepNum={1} title="Let's Get to Know You" subtitle="Please enter your basic details."
         onBack={back}
-        onContinue={() => continueStep(1, { fullName, email, phone, country, city })}
+        onContinue={() => continueStep(1)}
         continueDisabled={saving || !fullName || !email}
         continueLabel={saving ? "Saving..." : "Continue"}
         hideBack>
@@ -457,7 +495,7 @@ export default function JoinSupportFlow() {
     <Layout step={step}>
       <StepCard stepNum={2} title="Your Professional Information" subtitle="Help us understand your expertise."
         onBack={back}
-        onContinue={() => continueStep(2, { qualification, license, experience, specializations })}
+        onContinue={() => continueStep(2)}
         continueDisabled={saving || !qualification}
         continueLabel={saving ? "Saving..." : "Continue"}>
         <div className="space-y-3">
@@ -485,7 +523,7 @@ export default function JoinSupportFlow() {
       <Layout step={step}>
         <StepCard stepNum={3} title="Languages You Speak" subtitle="Select all languages you are comfortable conducting sessions in."
           onBack={back}
-          onContinue={() => continueStep(3, { selectedLangs, otherLangText })}
+          onContinue={() => continueStep(3)}
           continueDisabled={saving || selectedLangs.filter((c) => c !== "other").length === 0}
           continueLabel={saving ? "Saving..." : "Continue"}>
           <div className="space-y-3">
@@ -529,7 +567,7 @@ export default function JoinSupportFlow() {
       <Layout step={step}>
         <StepCard stepNum={4} title="Your Availability" subtitle="Set your available hours for each day. This step is required."
           onBack={back}
-          onContinue={() => continueStep(4, { daySlots, timezone })}
+          onContinue={() => continueStep(4)}
           continueDisabled={saving || selectedDays.length === 0}
           continueLabel={saving ? "Saving..." : "Continue"}>
           <div className="space-y-4">
@@ -603,39 +641,51 @@ export default function JoinSupportFlow() {
 
   if (step === 5) return (
     <Layout step={step}>
-      <StepCard stepNum={5} title="Session Preferences" subtitle="Communication methods and your session fee."
+      <StepCard stepNum={5} title="Session Pricing" subtitle="Set your fees for different support methods."
         onBack={back}
-        onContinue={() => continueStep(5, { sessionModes: SESSION_MODES, fee, currency })}
-        continueDisabled={saving || !fee}
+        onContinue={() => continueStep(5)}
+        continueDisabled={saving || !chatPrice || !voicePrice || !videoPrice}
         continueLabel={saving ? "Saving..." : "Continue"}>
         <div className="space-y-4">
           <div>
-            <Label className="text-xs mb-2 block">Session Modes</Label>
-            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-2">
-              <div className="flex items-start gap-2 mb-1">
-                <Info className="w-3.5 h-3.5 text-primary mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-primary">All three communication methods are required to ensure every client can connect with you in their preferred way.</p>
+            <Label className="text-xs mb-2 block">Service Availability Details</Label>
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-3">
+              <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                <span className="text-sm font-medium text-gray-800 flex items-center gap-1"><MessageCircle className="w-4 h-4 text-primary" /> Chat Package</span>
+                <span className="text-xs text-gray-500">Valid for 7 days</span>
               </div>
-              {SESSION_MODES.map((m) => (
-                <div key={m} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white border border-primary/20">
-                  <div className="w-4 h-4 rounded border-2 bg-primary border-primary flex items-center justify-center flex-shrink-0">
-                    <Check className="w-2.5 h-2.5 text-white" />
-                  </div>
-                  <span className="text-sm text-gray-800 font-medium">{m}</span>
-                  <span className="ml-auto text-xs text-primary font-medium">Required</span>
-                </div>
-              ))}
+              <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                <span className="text-sm font-medium text-gray-800 flex items-center gap-1"><Phone className="w-4 h-4 text-primary" /> Voice Package</span>
+                <span className="text-xs text-gray-500">Chat + 4 calls in 7 days</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-800 flex items-center gap-1"><Video className="w-4 h-4 text-primary" /> Video Package</span>
+                <span className="text-xs text-gray-500">Chat + Voice + 3 days Video</span>
+              </div>
             </div>
           </div>
+
           <div>
-            <Label className="text-xs">Per-Session Fee *</Label>
-            <div className="flex gap-2 mt-1">
-              <select className="text-xs border border-gray-200 rounded-lg px-2 h-9 bg-white w-28" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} {c.symbol}</option>)}
-              </select>
-              <Input className="flex-1 text-sm h-9 rounded-lg" type="number" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="Amount per session" />
+            <Label className="text-xs mb-1 block">Set Your Pricing</Label>
+            <select className="text-xs border border-gray-200 rounded-lg px-2 h-9 bg-white w-full mb-3" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} {c.symbol}</option>)}
+            </select>
+            
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Label className="text-xs w-24">Chat Support *</Label>
+                <Input className="flex-1 text-sm h-9 rounded-lg" type="number" value={chatPrice} onChange={(e) => setChatPrice(e.target.value)} placeholder="Amount" />
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className="text-xs w-24">Voice Support *</Label>
+                <Input className="flex-1 text-sm h-9 rounded-lg" type="number" value={voicePrice} onChange={(e) => setVoicePrice(e.target.value)} placeholder="Amount" />
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className="text-xs w-24">Video Support *</Label>
+                <Input className="flex-1 text-sm h-9 rounded-lg" type="number" value={videoPrice} onChange={(e) => setVideoPrice(e.target.value)} placeholder="Amount" />
+              </div>
             </div>
-            <p className="text-[10px] text-gray-400 mt-1">Your fee is subject to final approval by the super admin.</p>
+            <p className="text-[10px] text-gray-400 mt-2">Pricing is subject to Super Admin approval. You may negotiate this during the review phase.</p>
           </div>
         </div>
       </StepCard>
@@ -650,11 +700,12 @@ export default function JoinSupportFlow() {
       <Layout step={step}>
         <StepCard stepNum={6} title="Tell Us About Yourself" subtitle="Write a professional bio that helps clients connect with you."
           onBack={back}
-          onContinue={() => continueStep(6, { bio, photoUrl })}
-          continueDisabled={saving || bioLen < BIO_MIN}
+          onContinue={() => continueStep(6)}
+          continueDisabled={saving || bioLen < BIO_MIN || !photoUrl}
           continueLabel={saving ? "Saving..." : "Continue"}>
           <div className="space-y-3">
             <PhotoUpload value={photoUrl} onChange={setPhotoUrl} />
+            {!photoUrl && <p className="text-[10px] text-red-500">Profile photo is required.</p>}
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
               <p className="font-semibold mb-1.5 flex items-center gap-1"><Info className="w-3.5 h-3.5" /> Tips for a great bio:</p>
@@ -695,7 +746,7 @@ export default function JoinSupportFlow() {
       <Layout step={step}>
         <StepCard stepNum={7} title="Document Verification" subtitle="All three documents are required to proceed."
           onBack={back}
-          onContinue={() => continueStep(7, { degreeUrl, licenseUrl, govIdUrl })}
+          onContinue={() => continueStep(7)}
           continueDisabled={saving || !allUploaded}
           continueLabel={saving ? "Saving..." : "Continue"}>
           <div className="space-y-4">
@@ -732,7 +783,6 @@ export default function JoinSupportFlow() {
           { label: "Name", value: fullName },
           { label: "Email", value: email },
           { label: "Phone", value: phone || "—" },
-          { label: "Location", value: [city, country].filter(Boolean).join(", ") || "—" },
         ],
       },
       {
@@ -745,34 +795,20 @@ export default function JoinSupportFlow() {
         ],
       },
       {
-        title: "Languages",
-        goTo: 3,
-        rows: [{ label: "Languages", value: allSelectedLangLabels.join(", ") || "—" }],
-      },
-      {
         title: "Availability",
         goTo: 4,
         rows: [
           { label: "Available Days", value: availDays.join(", ") || "—" },
-          { label: "Time Slots", value: availTimes.join("; ") || "—" },
           { label: "Timezone", value: timezone },
         ],
       },
       {
-        title: "Session & Fee",
+        title: "Pricing",
         goTo: 5,
         rows: [
-          { label: "Session Modes", value: SESSION_MODES.join(", ") },
-          { label: "Fee", value: fee ? `${currencySymbol}${fee} (${currency})` : "—" },
-        ],
-      },
-      {
-        title: "Documents",
-        goTo: 7,
-        rows: [
-          { label: "Degree", value: degreeUrl ? "✓ Uploaded" : "Not uploaded" },
-          { label: "License", value: licenseUrl ? "✓ Uploaded" : "Not uploaded" },
-          { label: "Gov ID", value: govIdUrl ? "✓ Uploaded" : "Not uploaded" },
+          { label: "Chat Support", value: chatPrice ? `${currencySymbol}${chatPrice}` : "—" },
+          { label: "Voice Support", value: voicePrice ? `${currencySymbol}${voicePrice}` : "—" },
+          { label: "Video Support", value: videoPrice ? `${currencySymbol}${videoPrice}` : "—" },
         ],
       },
     ];
@@ -789,7 +825,7 @@ export default function JoinSupportFlow() {
               <span className="w-5 h-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 ml-auto">8</span>
             </div>
             <div className="px-5 pt-4 pb-3">
-              <h2 className="font-display text-base font-bold text-gray-900 mb-0.5">Review & Submit</h2>
+              <h2 className="font-display text-base font-bold text-gray-900 mb-0.5">Review Profile</h2>
               <p className="text-xs text-gray-500 mb-4">Please review your information. Click the edit icon to make changes.</p>
 
               <div className="space-y-4">
@@ -824,37 +860,55 @@ export default function JoinSupportFlow() {
                     </div>
                   </div>
                 ))}
-
-                {bio && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide">Bio</h3>
-                      <button onClick={() => setStep(6)} className="text-[10px] text-primary flex items-center gap-0.5 hover:underline">
-                        <Pencil className="w-2.5 h-2.5" /> Edit
-                      </button>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg px-3 py-2">
-                      <p className="text-[11px] text-gray-600 leading-relaxed">{bio}</p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
-            <div className="px-5 pb-5 flex gap-2">
+            <div className="px-5 pb-5 flex gap-2 pt-4">
               <Button variant="outline" size="sm" className="flex-shrink-0 rounded-lg" onClick={back}>
                 <ArrowLeft className="w-3.5 h-3.5" />
               </Button>
               <Button
                 className="flex-1 rounded-lg bg-primary text-white font-semibold text-sm"
                 size="sm"
-                onClick={handleSubmit}
+                onClick={() => continueStep(8)}
                 disabled={saving}
               >
-                {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-1.5" /> Submitting...</> : "Submit Application"}
+                Continue to Terms
               </Button>
             </div>
           </div>
         </div>
+      </Layout>
+    );
+  }
+
+  // Step 9 — Terms & Conditions
+  if (step === 9) {
+    return (
+      <Layout step={step}>
+        <StepCard stepNum={9} title="Terms & Conditions" subtitle="Please read and accept our platform terms before submitting."
+          onBack={back}
+          onContinue={handleSubmit}
+          continueDisabled={saving || !tcAccepted}
+          continueLabel={saving ? "Submitting..." : "Accept & Submit Application"}>
+          
+          <div className="space-y-4">
+            <div className="h-64 overflow-y-auto bg-gray-50 p-4 border border-gray-200 rounded-xl text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {tcContent ? tcContent : <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Loading terms...</div>}
+            </div>
+
+            <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
+              <input 
+                type="checkbox" 
+                className="mt-0.5 w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+                checked={tcAccepted} 
+                onChange={e => setTcAccepted(e.target.checked)} 
+              />
+              <span className="text-sm font-medium text-gray-800">
+                I have read and agree to the Therapist Terms & Conditions.
+              </span>
+            </label>
+          </div>
+        </StepCard>
       </Layout>
     );
   }
