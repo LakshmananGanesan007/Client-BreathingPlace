@@ -6,10 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  Check, ArrowLeft, Heart, Upload, Camera, Loader2, CheckCircle2, 
-  Info, AlertCircle, Pencil, MessageCircle, Phone, Video 
-} from "lucide-react";
+import { Check, ArrowLeft, Heart, Upload, Camera, Loader2, CheckCircle2, Info, AlertCircle, Pencil, MessageCircle, Phone, Video } from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 
@@ -51,15 +48,26 @@ const TIME_HOURS = Array.from({ length: 24 }, (_, i) => {
 });
 
 const uploadToCloudinary = async (file) => {
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+  
+  if (!cloudName || !uploadPreset) {
+    throw new Error("Missing Cloudinary configuration in .env");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+  formData.append("upload_preset", uploadPreset);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
     method: "POST",
     body: formData,
   });
+  
   const data = await res.json();
-  if (!data.secure_url) throw new Error("Upload failed");
+  if (!res.ok || !data.secure_url) {
+    throw new Error(data.error?.message || "Upload failed");
+  }
   return data.secure_url;
 };
 
@@ -111,12 +119,19 @@ function FileUploadField({ label, value, onChange, required, accept = "image/*,.
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File size must be less than 10MB");
+      return;
+    }
+
     setUploading(true);
     try {
       const url = await uploadToCloudinary(file);
       onChange(url);
-    } catch {
-      toast.error(`Failed to upload ${label}`);
+      toast.success(`${label} uploaded successfully!`);
+    } catch (err) {
+      toast.error(err.message || `Failed to upload ${label}`);
     }
     setUploading(false);
   };
@@ -163,18 +178,27 @@ function FileUploadField({ label, value, onChange, required, accept = "image/*,.
 function PhotoUpload({ value, onChange }) {
   const ref = useRef(null);
   const [uploading, setUploading] = useState(false);
+  
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB");
+      return;
+    }
+
     setUploading(true);
     try {
       const url = await uploadToCloudinary(file);
       onChange(url);
-    } catch {
-      toast.error("Failed to upload photo");
+      toast.success("Photo uploaded successfully!");
+    } catch (err) {
+      toast.error(err.message || "Failed to upload photo");
     }
     setUploading(false);
   };
+
   return (
     <div className="flex items-center gap-3">
       <div onClick={() => ref.current?.click()} className="w-14 h-14 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:border-primary overflow-hidden relative flex-shrink-0">
@@ -285,7 +309,6 @@ export default function JoinSupportFlow() {
   const [daySlots, setDaySlots] = useState({});
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   
-  // Split Pricing State
   const SESSION_MODES = ["Chat", "Voice Call", "Video Call"];
   const [chatPrice, setChatPrice] = useState("");
   const [voicePrice, setVoicePrice] = useState("");
@@ -298,14 +321,13 @@ export default function JoinSupportFlow() {
   const [licenseUrl, setLicenseUrl] = useState("");
   const [govIdUrl, setGovIdUrl] = useState("");
 
-  // T&C State
   const [tcAccepted, setTcAccepted] = useState(false);
   const [tcContent, setTcContent] = useState("");
 
   useEffect(() => {
     if (!userProfile || initialized) return;
     const saved = (userProfile.step_data && typeof userProfile.step_data === "object") ? userProfile.step_data : {};
-    const lastStep = userProfile.last_completed_step || 0;
+    const lastCompleted = userProfile.last_completed_step || 0;
 
     if (saved.fullName) setFullName(saved.fullName);
     if (saved.email) setEmail(saved.email);
@@ -330,11 +352,37 @@ export default function JoinSupportFlow() {
     if (saved.licenseUrl) setLicenseUrl(saved.licenseUrl);
     if (saved.govIdUrl) setGovIdUrl(saved.govIdUrl);
 
-    if (lastStep > 0 && lastStep < TOTAL_STEPS) setStep(lastStep + 1);
+    // Strict calculation of resume state to prevent jumping forward or backward incorrectly
+    let nextStep = 1;
+    if (saved.fullName && saved.email && saved.country) {
+      nextStep = 2;
+      if (saved.qualification) {
+        nextStep = 3;
+        if (saved.selectedLangs && saved.selectedLangs.length > 0) {
+          nextStep = 4;
+          if (saved.daySlots && Object.keys(saved.daySlots).length > 0) {
+            nextStep = 5;
+            if (saved.chatPrice && saved.voicePrice && saved.videoPrice) {
+              nextStep = 6;
+              if (saved.bio && saved.bio.length >= 100 && saved.photoUrl) {
+                nextStep = 7;
+                if (saved.degreeUrl && saved.licenseUrl && saved.govIdUrl) {
+                  nextStep = 8;
+                  if (lastCompleted >= 8) {
+                    nextStep = 9;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    setStep(nextStep);
     setInitialized(true);
   }, [userProfile, initialized]);
 
-  // Fetch T&C dynamically
   useEffect(() => {
     async function fetchTc() {
       const { data } = await supabase.from('terms_and_conditions')
@@ -378,7 +426,6 @@ export default function JoinSupportFlow() {
 
   const back = () => { if (step === 1) navigate("/complete-profile"); else setStep((s) => s - 1); };
 
-  // THE FIX: Merge all state data so nothing gets lost between steps
   const continueStep = async (stepNum) => {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
@@ -393,14 +440,23 @@ export default function JoinSupportFlow() {
       degreeUrl, licenseUrl, govIdUrl
     };
 
+    // Ensure we never reduce the last_completed_step if they go back to edit
+    const currentLastStep = userProfile?.last_completed_step || 0;
+    const newLastStep = Math.max(currentLastStep, stepNum);
+
     try {
       await supabase.from('user_profiles').update({
         step_data: mergedStepData,
-        last_completed_step: stepNum,
+        last_completed_step: newLastStep,
         updated_at: new Date().toISOString()
       }).eq('user_id', user.id);
+
+      if (userProfile) {
+        userProfile.step_data = mergedStepData;
+        userProfile.last_completed_step = newLastStep;
+      }
     } catch (err) {
-      console.error(err);
+      toast.error("Failed to save progress.");
     }
     setSaving(false);
     setStep(stepNum + 1);
@@ -419,7 +475,6 @@ export default function JoinSupportFlow() {
         otherLangText.split(",").map((s) => s.trim()).filter(Boolean).forEach((l) => langLabels.push(l));
       }
 
-      // Update to database with split pricing
       const { error: tError } = await supabase.from('therapist_profiles').upsert({
         user_id: user.id,
         full_name: fullName,
@@ -455,7 +510,7 @@ export default function JoinSupportFlow() {
       }).eq('user_id', user.id);
 
       await refreshUserProfile();
-      setStep(10); // Success Step
+      setStep(10); 
     } catch (err) {
       toast.error("Unable to insert record into therapist_profiles. " + err.message);
     } finally {

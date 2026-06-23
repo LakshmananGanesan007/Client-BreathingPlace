@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Check, ArrowLeft, Heart, Camera, Loader2, CheckCircle2,
   MessageCircle, Phone, Video, User, MapPin, Activity,
-  Shield, Star, Clock, Pencil, Upload // Added missing Upload import!
+  Shield, Star, Clock, Pencil, Upload
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
@@ -59,15 +59,26 @@ const LANGUAGES_LIST = [
 const safe = (val) => (val || "").toLowerCase().replace(/ /g, "_");
 
 const uploadToCloudinary = async (file) => {
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+  
+  if (!cloudName || !uploadPreset) {
+    throw new Error("Missing Cloudinary configuration in .env");
+  }
+
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+  formData.append("upload_preset", uploadPreset);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
     method: "POST",
     body: formData,
   });
+  
   const data = await res.json();
-  if (!data.secure_url) throw new Error("Upload failed");
+  if (!res.ok || !data.secure_url) {
+    throw new Error(data.error?.message || "Upload failed");
+  }
   return data.secure_url;
 };
 
@@ -148,12 +159,19 @@ function PhotoUpload({ value, onChange }) {
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB");
+      return;
+    }
+
     setUploading(true);
     try {
       const url = await uploadToCloudinary(file);
       onChange(url);
-    } catch {
-      toast.error("Failed to upload photo");
+      toast.success("Photo uploaded successfully!");
+    } catch (err) {
+      toast.error(err.message || "Failed to upload photo");
     }
     setUploading(false);
   };
@@ -305,7 +323,7 @@ export default function CustomerOnboarding() {
   useEffect(() => {
     if (!userProfile || initialized) return;
     const saved = (userProfile.step_data && typeof userProfile.step_data === "object") ? userProfile.step_data : {};
-    const lastStep = userProfile.last_completed_step || 0;
+    const lastCompleted = userProfile.last_completed_step || 0;
 
     if (saved.fullName) setFullName(saved.fullName);
     if (saved.gender) setGender(saved.gender);
@@ -334,11 +352,31 @@ export default function CustomerOnboarding() {
     if (saved.prefTherapistGender) setPrefTherapistGender(saved.prefTherapistGender);
     if (saved.prefSessionTime) setPrefSessionTime(saved.prefSessionTime);
 
-    if (lastStep > 0 && lastStep < TOTAL_STEPS) setStep(lastStep + 1);
+    // Strict calculation of resume state to prevent jumping forward or backward incorrectly
+    let nextStep = 1;
+    if (saved.fullName && saved.gender && saved.country && saved.photoUrl) {
+      nextStep = 2;
+      if (saved.email && saved.phone && saved.prefLanguage) {
+        nextStep = 3;
+        if (saved.primaryConcern && saved.previousTherapy !== null && saved.previousTherapy !== undefined) {
+          nextStep = 4;
+          if (lastCompleted >= 4) { // Relies on lastCompleted since Step 4 has no hard requirements
+            nextStep = 5;
+            if (saved.prefTherapistGender && saved.prefSessionTime) {
+              nextStep = 6;
+              if (lastCompleted >= 6) {
+                nextStep = 7;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    setStep(nextStep);
     setInitialized(true);
   }, [userProfile, initialized]);
 
-  // Fetch T&C dynamically
   useEffect(() => {
     async function fetchTc() {
       const { data } = await supabase.from('terms_and_conditions')
@@ -364,14 +402,23 @@ export default function CustomerOnboarding() {
       prefTherapistGender, prefSessionTime
     };
 
+    // Ensure we never reduce the last_completed_step if they go back to edit
+    const currentLastStep = userProfile?.last_completed_step || 0;
+    const newLastStep = Math.max(currentLastStep, stepNum);
+
     try {
       await supabase.from('user_profiles').update({
         step_data: mergedStepData,
-        last_completed_step: stepNum,
+        last_completed_step: newLastStep,
         updated_at: new Date().toISOString()
       }).eq('user_id', user.id);
+      
+      if (userProfile) {
+        userProfile.step_data = mergedStepData;
+        userProfile.last_completed_step = newLastStep;
+      }
     } catch (err) {
-      console.error(err);
+      toast.error("Failed to save progress.");
     }
     setSaving(false);
     setStep(stepNum + 1);
@@ -427,7 +474,7 @@ export default function CustomerOnboarding() {
       }).eq('user_id', user.id);
 
       await refreshUserProfile();
-      setStep(8); // Success step
+      setStep(8);
     } catch (err) {
       toast.error("Unable to insert record into customer_profiles. " + err.message);
     } finally {

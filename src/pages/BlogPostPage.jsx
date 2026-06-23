@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/lib/supabaseClient";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,16 @@ export default function BlogPostPage() {
 
   const { data: posts = [], isLoading } = useQuery({
     queryKey: ["blog-post", slug],
-    queryFn: () => base44.entities.BlogPost.filter({ slug, published: true }),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('blog_posts')
+        .select('*')
+        .eq('slug', slug)
+        .eq('published', true);
+      
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   const post = posts[0];
@@ -72,7 +81,7 @@ export default function BlogPostPage() {
             )}
             <div className="flex items-center gap-1.5">
               <Calendar className="w-4 h-4" />
-              <span>{post.created_date ? moment(post.created_date).format("MMM D, YYYY") : "Recent"}</span>
+              <span>{post.created_at ? moment(post.created_at).format("MMM D, YYYY") : "Recent"}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4" />

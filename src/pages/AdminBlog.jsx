@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import RoleGuard from "@/components/RoleGuard";
@@ -13,7 +13,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Plus, Edit, Trash2, FileText, Eye, EyeOff, Upload, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-const EMPTY_POST = { title: "", slug: "", excerpt: "", content: "", cover_image_url: "", tag: "", read_time: "5 min read", published: false, author_name: "" };
+const EMPTY_POST = { 
+  title: "", 
+  slug: "", 
+  excerpt: "", 
+  content: "", 
+  cover_image_url: "", 
+  tag: "", 
+  read_time: "5 min read", 
+  published: false, 
+  author_name: "" 
+};
 
 function CoverImageUpload({ value, onChange }) {
   const [uploading, setUploading] = useState(false);
@@ -81,34 +91,48 @@ function BlogContent() {
   const { data: posts = [], isLoading } = useQuery({
     queryKey: ["blog-posts-admin"],
     queryFn: async () => {
-      const { data } = await supabase.from('blog_posts').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('blog_posts').select('*').order('created_at', { ascending: false });
+      if (error && error.code !== 'PGRST116') throw error; // Ignore not found on empty table
       return data || [];
     },
   });
 
   const save = useMutation({
     mutationFn: async (data) => {
-      if (!data.slug && data.title) {
-        data.slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-      }
+      // Strictly map the payload to ensure no accidental IDs or weird Base44 metadata is sent to Supabase
+      const payload = {
+        title: data.title,
+        slug: data.slug || data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''),
+        excerpt: data.excerpt,
+        content: data.content,
+        cover_image_url: data.cover_image_url,
+        tag: data.tag,
+        read_time: data.read_time,
+        published: data.published,
+        author_name: data.author_name
+      };
       
       let res;
       if (dialog?.mode === "edit") {
-        res = await supabase.from('blog_posts').update(data).eq('id', dialog.data.id);
+        res = await supabase.from('blog_posts').update(payload).eq('id', dialog.data.id);
       } else {
-        res = await supabase.from('blog_posts').insert([data]);
+        res = await supabase.from('blog_posts').insert([payload]);
       }
+      
       if (res.error) throw res.error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["blog-posts-admin"] });
       queryClient.invalidateQueries({ queryKey: ["blog-posts"] });
       queryClient.invalidateQueries({ queryKey: ["blog-posts-landing"] });
-      const msg = dialog?.mode === "edit" ? "Post updated!" : "Post created!";
+      const msg = dialog?.mode === "edit" ? "Post updated successfully!" : "Post created successfully!";
       setDialog(null);
       toast.success(msg);
     },
-    onError: () => toast.error("Unable to save blog changes. Please try again.")
+    onError: (error) => {
+      console.error("Supabase Save Error:", error);
+      toast.error(`Failed to save: ${error.message || "Please check your database."}`);
+    }
   });
 
   const remove = useMutation({
@@ -122,7 +146,7 @@ function BlogContent() {
       queryClient.invalidateQueries({ queryKey: ["blog-posts-landing"] });
       toast.success("Post deleted.");
     },
-    onError: () => toast.error("Unable to save blog changes. Please try again.")
+    onError: () => toast.error("Unable to delete post. Please try again.")
   });
 
   const togglePublish = useMutation({
@@ -136,7 +160,7 @@ function BlogContent() {
       queryClient.invalidateQueries({ queryKey: ["blog-posts-landing"] });
       toast.success(published ? "Post published!" : "Post hidden.");
     },
-    onError: () => toast.error("Unable to save blog changes. Please try again.")
+    onError: () => toast.error("Unable to update status. Please try again.")
   });
 
   function openCreate() { setForm(EMPTY_POST); setDialog({ mode: "create" }); }

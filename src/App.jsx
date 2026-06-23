@@ -1,4 +1,5 @@
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster as ShadcnToaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
@@ -136,7 +137,10 @@ function App() {
           <ScrollToTop />
           <AuthenticatedApp />
         </Router>
-        <Toaster />
+        {/* Render standard shadcn Toaster */}
+        <ShadcnToaster />
+        {/* Render Sonner Toaster in the top-right corner to catch all toast.success calls */}
+        <SonnerToaster position="top-right" richColors />
       </QueryClientProvider>
     </AuthProvider>
   )

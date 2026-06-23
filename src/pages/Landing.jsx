@@ -1,7 +1,7 @@
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { useState } from "react";
-import { Check, Heart, Star } from "lucide-react";
+import { Check, Heart, Star, AlertCircle } from "lucide-react";
 import Navbar from "@/components/landing/Navbar";
 import MoodEntry from "@/components/landing/MoodEntry";
 import Features from "@/components/landing/Features";
@@ -72,7 +72,7 @@ export default function Landing() {
             <p className="text-base leading-relaxed mb-8 max-w-md animate-fade-in-up" style={{ animationDelay: "0.2s", color: "#6B7280" }}>
               Life feels heavy sometimes. Whether you feel overwhelmed, unheard, emotionally tired, or simply need someone to talk to — BreathingPlace is here for you.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 mb-10">
+            <div className="flex flex-col sm:flex-row gap-3 mb-6">
               <button
                 onClick={() => handleCTA("talk-freely")}
                 className="px-8 py-3 rounded-full bg-primary text-white font-medium shadow-md hover:shadow-lg transition-all hover:scale-105"
@@ -91,6 +91,18 @@ export default function Landing() {
                 </button>
               </Link>
             </div>
+            
+            {/* Enterprise-grade Disclaimer UI */}
+            <div 
+              className="mb-8 max-w-xl animate-fade-in-up flex items-start gap-3 py-3 pl-4 pr-5 bg-red-50/70 border-l-4 border-red-600 rounded-r-lg shadow-sm" 
+              style={{ animationDelay: "0.4s" }}
+            >
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-sm text-red-800 leading-relaxed">
+                Disclaimer: BreathingPlace provides emotional wellness and counselling support. We do not provide psychiatric diagnosis, clinical assessment, medical treatment, or emergency mental health services.
+              </p>
+            </div>
+
             <div className="flex flex-wrap items-center gap-6 text-sm text-gray-500 animate-fade-in-up" style={{ animationDelay: "0.6s" }}>
               <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-primary" /> Safe and Confidential</span>
               <span className="flex items-center gap-1.5"><Heart className="w-4 h-4 text-primary" /> No Judgment</span>
