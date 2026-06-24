@@ -77,7 +77,6 @@ const uploadToCloudinary = async (file) => {
   
   const data = await res.json();
   if (!res.ok || !data.secure_url) {
-    console.error("Cloudinary Error:", data);
     throw new Error(data.error?.message || "Upload failed");
   }
   return data.secure_url;
@@ -384,7 +383,6 @@ export default function CustomerOnboarding() {
         .select('content').eq('audience_type', 'customer').eq('is_published', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (data) setTcContent(data.content);
-      else setTcContent("Please agree to our standard platform terms and conditions.");
     }
     fetchTc();
   }, []);
@@ -920,8 +918,20 @@ export default function CustomerOnboarding() {
           continueLabel={saving ? "Submitting..." : "Accept & Submit Profile"}>
           
           <div className="space-y-4">
-            <div className="h-64 overflow-y-auto bg-gray-50 p-4 border border-gray-200 rounded-xl text-xs text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {tcContent ? tcContent : <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Loading terms...</div>}
+            <div className="h-64 overflow-y-auto bg-gray-50 p-4 border border-gray-200 rounded-xl text-xs text-gray-700 leading-relaxed">
+              {tcContent ? (
+                <ol className="list-decimal list-outside pl-4 space-y-2">
+                  {tcContent.split('\n').map((line, idx) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return null;
+                    // Automatically strip any manually typed numbers (e.g., "1. ") so it doesn't double-number
+                    const cleanText = trimmed.replace(/^\d+[\.\)]\s*/, '');
+                    return <li key={idx} className="pl-1">{cleanText}</li>;
+                  })}
+                </ol>
+              ) : (
+                <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Loading terms...</div>
+              )}
             </div>
 
             <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">

@@ -204,9 +204,10 @@ export default function SettingsPage() {
     setTcSaving(true);
     try {
       if (tcPublished) {
-        await supabase.from('terms_and_conditions')
+        const { error: updateErr } = await supabase.from('terms_and_conditions')
           .update({ is_published: false })
           .eq('audience_type', tcAudience);
+        if (updateErr) throw updateErr; // Explicitly catch and throw update errors
       }
       
       const { error } = await supabase.from('terms_and_conditions').insert({
@@ -219,7 +220,8 @@ export default function SettingsPage() {
       if (error) throw error;
       toast.success(`✅ ${tcAudience} Terms & Conditions saved successfully!`);
     } catch (error) {
-      toast.error("❌ Failed to save Terms & Conditions. Ensure the database policies are set up correctly.");
+      console.error("T&C Save Error:", error);
+      toast.error(`❌ Failed to save Terms & Conditions: ${error.message}`);
     } finally {
       setTcSaving(false);
     }
@@ -313,10 +315,10 @@ export default function SettingsPage() {
             <div>
               <Label className="text-xs">T&C Content (Shown during onboarding)</Label>
               <Textarea 
-                className="mt-1 h-64 font-mono text-xs bg-white" 
+                className="mt-1 h-64 text-sm bg-white leading-relaxed" 
                 value={tcContent} 
                 onChange={(e) => setTcContent(e.target.value)} 
-                placeholder="Enter the full terms and conditions text here..." 
+                placeholder="Press ENTER to create new numbered points..." 
               />
             </div>
 
