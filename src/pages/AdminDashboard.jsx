@@ -29,11 +29,20 @@ export default function AdminDashboard() {
     </div>
   );
 
-  const customers = data?.customers || [];
-  const therapists = data?.therapists || [];
+  // --- BUG FIX: Strict Relational Validation ---
+  const rawCustomers = data?.customers || [];
+  const rawTherapists = data?.therapists || [];
   const userProfiles = data?.userProfiles || [];
   const sessions = data?.sessions || [];
   const payments = data?.payments || [];
+
+  // 1. Create a Set of active, valid user IDs from the master user_profiles table (Source of Truth)
+  const validUserIds = new Set(userProfiles.map(p => p.user_id));
+
+  // 2. Filter out orphaned/mock data from child tables - ONLY keep records that exist in user_profiles
+  const customers = rawCustomers.filter(c => validUserIds.has(c.user_id));
+  const therapists = rawTherapists.filter(t => validUserIds.has(t.user_id));
+  // ---------------------------------------------
 
   const emailMap = Object.fromEntries(userProfiles.map(p => [p.user_id, p.email]));
   const pendingTherapists = therapists.filter(t => t.approval_status === "pending");
