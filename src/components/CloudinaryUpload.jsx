@@ -1,17 +1,10 @@
 import { useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
-import { supabase } from "@/lib/supabaseClient";
-import { Camera, Upload, Loader2 } from "lucide-react";
+import { Camera, Upload, Loader2, X } from "lucide-react";
+import { toast } from "sonner";
 
 /**
  * Reusable Cloudinary profile photo uploader.
- * Uses the uploadFile backend function (Cloudinary).
- *
- * Props:
- *   value       - current image URL string
- *   onChange    - callback(url: string)
- *   label       - button label text (default: "Profile Photo")
- *   size        - avatar size class (default: "w-24 h-24")
+ * Completely independent of Base44.
  */
 export default function CloudinaryUpload({ value, onChange, label = "Profile Photo", size = "w-24 h-24" }) {
   const fileRef = useRef(null);
@@ -22,7 +15,6 @@ export default function CloudinaryUpload({ value, onChange, label = "Profile Pho
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validate type & size (max 5MB)
     if (!file.type.startsWith("image/")) {
       setError("Please select an image file.");
       return;
@@ -35,25 +27,38 @@ export default function CloudinaryUpload({ value, onChange, label = "Profile Pho
     setError(null);
     setUploading(true);
 
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    const formData = new FormData();
-    formData.append("file", file);
-    if (session?.access_token) {
-      formData.append("supabaseToken", session.access_token);
-    }
+    try {
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-    const res = await base44.functions.invoke("uploadFile", formData);
-    const url = res?.data?.url;
-    if (url) {
-      onChange(url);
-    } else {
-      setError("Upload failed. Please try again.");
-    }
-    setUploading(false);
+      if (!cloudName || !uploadPreset) {
+        throw new Error("Missing Cloudinary configuration in .env");
+      }
 
-    // Reset input so same file can be re-selected
-    e.target.value = "";
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", uploadPreset);
+
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      const data = await res.json();
+      
+      if (data.secure_url) {
+        onChange(data.secure_url);
+      } else {
+        throw new Error(data.error?.message || "Upload failed");
+      }
+    } catch (err) {
+      console.error("Cloudinary Upload Error:", err);
+      setError("Upload failed. Please check your network or configuration.");
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
   return (

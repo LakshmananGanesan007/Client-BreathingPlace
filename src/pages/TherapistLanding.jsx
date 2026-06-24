@@ -152,20 +152,7 @@ export default function TherapistLanding() {
               </Button>
             </div>
 
-            {/* Enterprise-grade Disclaimer UI */}
-            <div 
-              className="mb-8 max-w-xl animate-fade-in-up flex items-start gap-3 py-3 pl-4 pr-5 bg-red-50/70 border-l-4 border-red-600 rounded-r-lg shadow-sm" 
-              style={{ animationDelay: "0.4s" }}
-            >
-              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-              <p className="text-sm text-red-800 leading-relaxed">
-                Disclaimer: By joining BreathingPlace as a Therapist, you agree to our Terms & Conditions and confirm that you provide emotional wellness and counselling support within your professional scope.
-
-You do not provide psychiatric diagnosis, clinical assessment, prescribe medication, medical treatment, or emergency mental health services.
-
-
-              </p>
-            </div>
+           
 
             <div className="flex flex-wrap items-center gap-6 text-sm text-gray-500 animate-fade-in-up" style={{ animationDelay: "0.6s" }}>
               <span className="flex items-center gap-2"><Check className="w-4 h-4 text-primary" /> Flexible Hours</span>

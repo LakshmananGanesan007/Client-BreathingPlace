@@ -70,13 +70,14 @@ const uploadToCloudinary = async (file) => {
   formData.append("file", file);
   formData.append("upload_preset", uploadPreset);
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
     method: "POST",
     body: formData,
   });
   
   const data = await res.json();
   if (!res.ok || !data.secure_url) {
+    console.error("Cloudinary Error:", data);
     throw new Error(data.error?.message || "Upload failed");
   }
   return data.secure_url;
@@ -174,6 +175,7 @@ function PhotoUpload({ value, onChange }) {
       toast.error(err.message || "Failed to upload photo");
     }
     setUploading(false);
+    e.target.value = "";
   };
   return (
     <div className="flex items-center gap-4">
@@ -181,9 +183,9 @@ function PhotoUpload({ value, onChange }) {
         {value ? <img src={value} alt="Photo" className="w-full h-full object-cover" /> : <Camera className="w-6 h-6 text-gray-400" />}
         {uploading && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 className="w-4 h-4 text-white animate-spin" /></div>}
       </div>
-      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
       <div>
-        <button type="button" onClick={() => ref.current?.click()} className="text-sm text-primary hover:underline font-medium">{value ? "Change Photo" : "Upload Profile Photo"}</button>
+        <button type="button" disabled={uploading} onClick={() => ref.current?.click()} className="text-sm text-primary hover:underline font-medium disabled:opacity-50">{value ? "Change Photo" : "Upload Profile Photo"}</button>
         <p className="text-xs text-gray-400 mt-0.5">JPG or PNG, max 5MB</p>
       </div>
     </div>
@@ -352,7 +354,6 @@ export default function CustomerOnboarding() {
     if (saved.prefTherapistGender) setPrefTherapistGender(saved.prefTherapistGender);
     if (saved.prefSessionTime) setPrefSessionTime(saved.prefSessionTime);
 
-    // Strict calculation of resume state to prevent jumping forward or backward incorrectly
     let nextStep = 1;
     if (saved.fullName && saved.gender && saved.country && saved.photoUrl) {
       nextStep = 2;
@@ -360,7 +361,7 @@ export default function CustomerOnboarding() {
         nextStep = 3;
         if (saved.primaryConcern && saved.previousTherapy !== null && saved.previousTherapy !== undefined) {
           nextStep = 4;
-          if (lastCompleted >= 4) { // Relies on lastCompleted since Step 4 has no hard requirements
+          if (lastCompleted >= 4) { 
             nextStep = 5;
             if (saved.prefTherapistGender && saved.prefSessionTime) {
               nextStep = 6;
@@ -402,7 +403,6 @@ export default function CustomerOnboarding() {
       prefTherapistGender, prefSessionTime
     };
 
-    // Ensure we never reduce the last_completed_step if they go back to edit
     const currentLastStep = userProfile?.last_completed_step || 0;
     const newLastStep = Math.max(currentLastStep, stepNum);
 

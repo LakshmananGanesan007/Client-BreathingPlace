@@ -59,13 +59,14 @@ const uploadToCloudinary = async (file) => {
   formData.append("file", file);
   formData.append("upload_preset", uploadPreset);
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
     method: "POST",
     body: formData,
   });
   
   const data = await res.json();
   if (!res.ok || !data.secure_url) {
+    console.error("Cloudinary Error:", data);
     throw new Error(data.error?.message || "Upload failed");
   }
   return data.secure_url;
@@ -132,8 +133,10 @@ function FileUploadField({ label, value, onChange, required, accept = "image/*,.
       toast.success(`${label} uploaded successfully!`);
     } catch (err) {
       toast.error(err.message || `Failed to upload ${label}`);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
     }
-    setUploading(false);
   };
 
   const isImage = value && (value.match(/\.(jpg|jpeg|png|gif|webp)$/i) || value.includes("image"));
@@ -170,7 +173,7 @@ function FileUploadField({ label, value, onChange, required, accept = "image/*,.
           <span>{uploading ? "Uploading..." : `Click to upload ${label}`}</span>
         </div>
       )}
-      <input ref={ref} type="file" accept={accept} className="hidden" onChange={handleFile} />
+      <input ref={ref} type="file" accept={accept} className="hidden" onChange={handleFile} disabled={uploading} />
     </div>
   );
 }
@@ -195,18 +198,20 @@ function PhotoUpload({ value, onChange }) {
       toast.success("Photo uploaded successfully!");
     } catch (err) {
       toast.error(err.message || "Failed to upload photo");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
     }
-    setUploading(false);
   };
 
   return (
     <div className="flex items-center gap-3">
-      <div onClick={() => ref.current?.click()} className="w-14 h-14 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:border-primary overflow-hidden relative flex-shrink-0">
+      <div onClick={() => !uploading && ref.current?.click()} className="w-14 h-14 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:border-primary overflow-hidden relative flex-shrink-0">
         {value ? <img src={value} alt="Photo" className="w-full h-full object-cover" /> : <Camera className="w-5 h-5 text-gray-400" />}
         {uploading && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><Loader2 className="w-4 h-4 text-white animate-spin" /></div>}
       </div>
-      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-      <button type="button" onClick={() => ref.current?.click()} className="text-xs text-primary hover:underline">{value ? "Change Photo" : "Upload Photo"}</button>
+      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
+      <button type="button" disabled={uploading} onClick={() => ref.current?.click()} className="text-xs text-primary hover:underline disabled:opacity-50">{value ? "Change Photo" : "Upload Photo"}</button>
     </div>
   );
 }
@@ -352,7 +357,6 @@ export default function JoinSupportFlow() {
     if (saved.licenseUrl) setLicenseUrl(saved.licenseUrl);
     if (saved.govIdUrl) setGovIdUrl(saved.govIdUrl);
 
-    // Strict calculation of resume state to prevent jumping forward or backward incorrectly
     let nextStep = 1;
     if (saved.fullName && saved.email && saved.country) {
       nextStep = 2;
@@ -440,7 +444,6 @@ export default function JoinSupportFlow() {
       degreeUrl, licenseUrl, govIdUrl
     };
 
-    // Ensure we never reduce the last_completed_step if they go back to edit
     const currentLastStep = userProfile?.last_completed_step || 0;
     const newLastStep = Math.max(currentLastStep, stepNum);
 
