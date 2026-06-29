@@ -56,21 +56,24 @@ export default function BookingPage() {
         .add(50, "minutes")
         .format("HH:mm");
 
-      const { data: session, error: sessionError } = await supabase
-        .from("sessions")
-        .insert({
-          customer_id: user.id,
-          customer_name: user.user_metadata?.full_name || user.email,
-          therapist_id: therapist?.user_id,
-          therapist_name: therapist?.full_name,
-          session_date: selectedDate,
-          start_time: selectedTime,
-          end_time: endTime,
-          status: "payment_pending",
-          session_type: "initial_consultation",
-        })
-        .select()
-        .single();
+      // Step 1: Pre-create session in "payment_pending" state
+// Ensure the fields below match your SQL ALTER TABLE column names exactly
+const { data: session, error: sessionError } = await supabase
+  .from("sessions")
+  .insert({
+    customer_id: user.id,
+    customer_name: user.user_metadata?.full_name || user.email,
+    therapist_id: therapist?.user_id, // Ensure this matches your table's therapist column
+    therapist_name: therapist?.full_name,
+    session_date: selectedDate,
+    start_time: selectedTime,
+    // end_time: endTime, // COMMENT THIS OUT if you haven't added this column to SQL yet
+    status: "payment_pending",
+    session_type: "initial_consultation",
+    amount: finalPrice // Ensure this matches your SQL 'amount' column
+  })
+  .select()
+  .single();
 
       if (sessionError) throw new Error("Failed to create session. Please try again.");
 
