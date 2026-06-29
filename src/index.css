@@ -23,6 +23,28 @@
   .animate-slide-in-right {
     animation: slideInRight 0.8s ease-out forwards;
   }
+  .animate-fade-in-left {
+    animation: slideInLeft 0.8s ease-out forwards;
+  }
+  .animate-fade-in-right {
+    animation: slideInRight 0.8s ease-out forwards;
+  }
+}
+
+/* Ensure animated elements never stay permanently invisible */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-fade-in-up,
+  .animate-fade-in-down,
+  .animate-scale-in,
+  .animate-slide-in-left,
+  .animate-slide-in-right,
+  .animate-fade-in-left,
+  .animate-fade-in-right {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 @keyframes fadeIn {

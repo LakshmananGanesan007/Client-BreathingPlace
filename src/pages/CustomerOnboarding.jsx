@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Check, ArrowLeft, Heart, Camera, Loader2, CheckCircle2,
   MessageCircle, Phone, Video, User, MapPin, Activity,
-  Shield, Star, Clock, Pencil, Upload
+  Shield, Star, Clock, Pencil, Upload, AlertCircle
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
@@ -17,30 +17,30 @@ import { toast } from "sonner";
 const TOTAL_STEPS = 7; 
 
 const GENDERS = ["Male", "Female", "Non-binary", "Prefer not to say"];
-const COUNTRIES = [
-  "India", "United States", "United Kingdom", "Canada", "Australia", "UAE",
-  "Singapore", "Germany", "France", "New Zealand", "South Africa", "Other"
+
+// Extended Relationship Statuses
+const REL_STATUSES = [
+  "Single", "Married", "Divorced", "Widowed", "Separated", 
+  "Engaged", "Long Distance Relationship", "It's Complicated", "Cohabitation (Live-in Relationship)"
 ];
-const TIMEZONES = [
-  "Asia/Kolkata (IST)", "America/New_York (EST)", "America/Los_Angeles (PST)",
-  "Europe/London (GMT)", "Asia/Dubai (GST)", "Asia/Singapore (SGT)",
-  "Australia/Sydney (AEST)", "America/Toronto (EST)", "Europe/Berlin (CET)"
-];
+
+const PREF_TIMES = ["Morning", "Afternoon", "Evening", "Anytime"];
+const THERAPIST_GENDERS = ["Male", "Female", "No Preference"];
+const SLEEP_QUALITY = ["Good", "Fair", "Poor", "Very Poor"];
+const STRESS_LEVELS = ["Low", "Moderate", "High", "Very High"];
+const ANXIETY_LEVELS = ["None", "Mild", "Moderate", "Severe"];
+const FOOD_INTAKE_OPTS = ["Appetite", "Non-Appetite"];
+
 const CONCERNS = [
   "Anxiety", "Depression", "Stress", "Relationship Issues", "Trauma / PTSD",
   "Grief & Loss", "Self-esteem", "Career / Life Confusion", "Loneliness",
   "Anger Management", "Family Conflict", "Other"
 ];
+
 const GOALS = [
   "Understand my emotions better", "Learn coping strategies", "Improve my relationships",
   "Overcome past trauma", "Manage stress and anxiety", "Gain clarity in life", "General mental wellness"
 ];
-const THERAPIST_GENDERS = ["Male", "Female", "No Preference"];
-const SLEEP_QUALITY = ["Good", "Fair", "Poor", "Very Poor"];
-const STRESS_LEVELS = ["Low", "Moderate", "High", "Very High"];
-const ANXIETY_LEVELS = ["None", "Mild", "Moderate", "Severe"];
-const REL_STATUSES = ["Single", "In a Relationship", "Married", "Divorced", "Widowed"];
-const PREF_TIMES = ["Morning", "Afternoon", "Evening", "Flexible"];
 
 const LANGUAGES_LIST = [
   { code: "en", label: "English" }, { code: "hi", label: "Hindi" }, { code: "ta", label: "Tamil" },
@@ -54,6 +54,33 @@ const LANGUAGES_LIST = [
   { code: "sv", label: "Swedish" }, { code: "id", label: "Indonesian" }, { code: "ms", label: "Malay" },
   { code: "th", label: "Thai" }, { code: "vi", label: "Vietnamese" }, { code: "sw", label: "Swahili" },
   { code: "he", label: "Hebrew" }, { code: "fa", label: "Persian (Farsi)" }, { code: "other", label: "Other" },
+];
+
+const COUNTRIES = [
+  "Afghanistan", "Albania", "Algeria", "Argentina", "Australia", "Austria", "Bangladesh", "Belgium", 
+  "Brazil", "Canada", "China", "Colombia", "Denmark", "Egypt", "Finland", "France", "Germany", 
+  "Greece", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Japan", "Kenya", 
+  "Malaysia", "Mexico", "Morocco", "Netherlands", "New Zealand", "Nigeria", "Norway", "Pakistan", 
+  "Philippines", "Poland", "Portugal", "Russia", "Saudi Arabia", "Singapore", "South Africa", 
+  "South Korea", "Spain", "Sri Lanka", "Sweden", "Switzerland", "Thailand", "Turkey", "UAE", 
+  "United Kingdom", "United States", "Vietnam", "Other"
+];
+
+const TIMEZONES = [
+  "Pacific/Midway (GMT-11:00)", "America/Honolulu (GMT-10:00)", "America/Anchorage (GMT-09:00)",
+  "America/Los_Angeles (PST/PDT)", "America/Denver (MST/MDT)", "America/Chicago (CST/CDT)",
+  "America/New_York (EST/EDT)", "America/Caracas (GMT-04:00)", "America/Buenos_Aires (GMT-04:00)",
+  "America/Sao_Paulo (GMT-03:00)", "Atlantic/South_Georgia (GMT-02:00)", "Atlantic/Azores (GMT-02:00)",
+  "Europe/London (GMT/BST)", "Europe/Paris (CET/CEST)", "Europe/Berlin (CET/CEST)",
+  "Europe/Athens (EET/EEST)", "Africa/Cairo (EET)", "Africa/Johannesburg (SAST)",
+  "Europe/Moscow (MSK)", "Asia/Dubai (GST)", "Asia/Kolkata (IST)",
+  "Asia/Dhaka (BST)", "Asia/Bangkok (ICT)", "Asia/Singapore (SGT)",
+  "Asia/Tokyo (JST)", "Australia/Sydney (AEST/AEDT)", "Pacific/Auckland (NZST/NZDT)"
+];
+
+const COUNTRY_CODES = [
+  "+1", "+44", "+91", "+61", "+81", "+49", "+33", "+971", "+65", "+86", 
+  "+92", "+880", "+55", "+27", "+234", "+254", "+20", "+90", "+34", "+39"
 ];
 
 const safe = (val) => (val || "").toLowerCase().replace(/ /g, "_");
@@ -92,7 +119,7 @@ function StepIndicator({ current, total }) {
   );
 }
 
-function StepCard({ stepNum, title, subtitle, children, onBack, onContinue, continueDisabled, continueLabel = "Continue", hideBack }) {
+function StepCard({ stepNum, title, subtitle, children, onBack, onContinue, continueDisabled, continueLabel = "Continue", hideBack, hideContinueBtn }) {
   return (
     <div className="max-w-md mx-auto w-full">
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -111,14 +138,16 @@ function StepCard({ stepNum, title, subtitle, children, onBack, onContinue, cont
               <ArrowLeft className="w-3.5 h-3.5" />
             </Button>
           )}
-          <Button
-            className="flex-1 rounded-full bg-primary text-white font-semibold text-sm"
-            size="sm" onClick={onContinue} disabled={continueDisabled}
-          >
-            {continueDisabled && continueLabel.includes("Saving") ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />{continueLabel}</>
-            ) : continueLabel}
-          </Button>
+          {!hideContinueBtn && (
+            <Button
+              className="flex-1 rounded-full bg-primary text-white font-semibold text-sm transition-all"
+              size="sm" onClick={onContinue} disabled={continueDisabled}
+            >
+              {continueDisabled && continueLabel.includes("Saving") ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />{continueLabel}</>
+              ) : continueLabel}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -149,6 +178,17 @@ function SelectOption({ label, selected, onClick }) {
     <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left text-sm transition-all ${selected ? "border-primary bg-primary/5 font-medium text-primary" : "border-gray-200 hover:border-gray-300 text-gray-700"}`}>
       <span className="flex-1">{label}</span>
       {selected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+    </button>
+  );
+}
+
+function CheckToggle({ label, selected, onClick }) {
+  return (
+    <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left text-sm transition-all ${selected ? "border-primary bg-primary/5 text-primary" : "border-gray-100 hover:border-gray-200 text-gray-700"}`}>
+      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected ? "bg-primary border-primary" : "border-gray-300"}`}>
+        {selected && <Check className="w-2.5 h-2.5 text-white" />}
+      </div>
+      {label}
     </button>
   );
 }
@@ -204,6 +244,8 @@ function AssessmentCard({ icon: Icon, title, levels, selected, onSelect, colorCl
     "Severe": "bg-red-100 text-red-700 border-red-200",
     "Very High": "bg-red-100 text-red-700 border-red-200",
     "Very Poor": "bg-red-100 text-red-700 border-red-200",
+    "Appetite": "bg-emerald-100 text-emerald-700 border-emerald-200",
+    "Non-Appetite": "bg-rose-100 text-rose-700 border-rose-200",
   };
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -298,7 +340,7 @@ export default function CustomerOnboarding() {
 
   const [email, setEmail] = useState(user?.email || "");
   const [phone, setPhone] = useState("");
-  const [prefLanguage, setPrefLanguage] = useState("");
+  const [selectedLangs, setSelectedLangs] = useState([]);
   const [langSearch, setLangSearch] = useState("");
   const [otherLangText, setOtherLangText] = useState("");
 
@@ -306,13 +348,19 @@ export default function CustomerOnboarding() {
   const [problemDesc, setProblemDesc] = useState("");
   const [therapyGoal, setTherapyGoal] = useState("");
   const [previousTherapy, setPreviousTherapy] = useState(null);
+  const [therapyExperienceDetails, setTherapyExperienceDetails] = useState("");
+  const [expectations, setExpectations] = useState("");
   const [currentMedication, setCurrentMedication] = useState("");
   const [anxietyLevel, setAnxietyLevel] = useState("");
   const [stressLevel, setStressLevel] = useState("");
   const [sleepQuality, setSleepQuality] = useState("");
-  const [depressionHistory, setDepressionHistory] = useState(null);
+  const [foodIntake, setFoodIntake] = useState("");
 
-  const [emergencyContact, setEmergencyContact] = useState("");
+  // Emergency Contact 
+  const [emName, setEmName] = useState("");
+  const [emRel, setEmRel] = useState("");
+  const [emCode, setEmCode] = useState("+91");
+  const [emPhone, setEmPhone] = useState("");
 
   const [prefTherapistGender, setPrefTherapistGender] = useState("");
   const [prefSessionTime, setPrefSessionTime] = useState("");
@@ -338,29 +386,44 @@ export default function CustomerOnboarding() {
     if (saved.relationshipStatus) setRelationshipStatus(saved.relationshipStatus);
     if (saved.email) setEmail(saved.email);
     if (saved.phone) setPhone(saved.phone);
-    if (saved.prefLanguage) setPrefLanguage(saved.prefLanguage);
+    
+    // Migration check for older prefLanguage string vs new selectedLangs array
+    if (saved.selectedLangs) {
+      setSelectedLangs(saved.selectedLangs);
+    } else if (saved.prefLanguage) {
+      setSelectedLangs([saved.prefLanguage]);
+    }
+    
     if (saved.otherLangText) setOtherLangText(saved.otherLangText);
+    
     if (saved.primaryConcern) setPrimaryConcern(saved.primaryConcern);
     if (saved.problemDesc) setProblemDesc(saved.problemDesc);
     if (saved.therapyGoal) setTherapyGoal(saved.therapyGoal);
     if (saved.previousTherapy !== undefined) setPreviousTherapy(saved.previousTherapy);
+    if (saved.therapyExperienceDetails) setTherapyExperienceDetails(saved.therapyExperienceDetails);
+    if (saved.expectations) setExpectations(saved.expectations);
     if (saved.currentMedication) setCurrentMedication(saved.currentMedication);
     if (saved.anxietyLevel) setAnxietyLevel(saved.anxietyLevel);
     if (saved.stressLevel) setStressLevel(saved.stressLevel);
     if (saved.sleepQuality) setSleepQuality(saved.sleepQuality);
-    if (saved.depressionHistory !== undefined) setDepressionHistory(saved.depressionHistory);
-    if (saved.emergencyContact) setEmergencyContact(saved.emergencyContact);
+    if (saved.foodIntake) setFoodIntake(saved.foodIntake);
+    
+    if (saved.emName) setEmName(saved.emName);
+    if (saved.emRel) setEmRel(saved.emRel);
+    if (saved.emCode) setEmCode(saved.emCode);
+    if (saved.emPhone) setEmPhone(saved.emPhone);
+
     if (saved.prefTherapistGender) setPrefTherapistGender(saved.prefTherapistGender);
     if (saved.prefSessionTime) setPrefSessionTime(saved.prefSessionTime);
 
     let nextStep = 1;
-    if (saved.fullName && saved.gender && saved.country && saved.photoUrl) {
+    if (saved.fullName && saved.gender && saved.country && saved.timezone && saved.photoUrl) {
       nextStep = 2;
-      if (saved.email && saved.phone && saved.prefLanguage) {
+      if (saved.email && saved.phone && saved.selectedLangs && saved.selectedLangs.length >= 2) {
         nextStep = 3;
-        if (saved.primaryConcern && saved.previousTherapy !== null && saved.previousTherapy !== undefined) {
+        if (saved.primaryConcern && saved.previousTherapy !== null && saved.previousTherapy !== undefined && saved.foodIntake) {
           nextStep = 4;
-          if (lastCompleted >= 4) { 
+          if (saved.emName && saved.emRel && saved.emPhone && saved.emPhone.length === 10) { 
             nextStep = 5;
             if (saved.prefTherapistGender && saved.prefSessionTime) {
               nextStep = 6;
@@ -387,6 +450,26 @@ export default function CustomerOnboarding() {
     fetchTc();
   }, []);
 
+  const toggleLang = (code) => {
+    setSelectedLangs(prev => {
+      if (prev.includes(code)) return prev.filter(c => c !== code);
+      if (prev.length >= 3) {
+        toast.error("You can only select up to 3 languages.");
+        return prev;
+      }
+      return [...prev, code];
+    });
+  };
+
+  const getLangLabels = () => {
+    const labels = selectedLangs.filter(c => c !== "other").map(code => LANGUAGES_LIST.find(l => l.code === code)?.label || code);
+    if (selectedLangs.includes("other") && otherLangText) {
+      const extras = otherLangText.split(",").map(s => s.trim()).filter(Boolean);
+      labels.push(...extras);
+    }
+    return labels;
+  };
+
   const back = () => { if (step === 1) navigate("/complete-profile"); else setStep((s) => s - 1); };
 
   const continueStep = async (stepNum) => {
@@ -395,9 +478,9 @@ export default function CustomerOnboarding() {
 
     const mergedStepData = {
       fullName, gender, dob, country, state, city, timezone, photoUrl, occupation, relationshipStatus,
-      email, phone, prefLanguage, otherLangText,
-      primaryConcern, problemDesc, therapyGoal, previousTherapy, currentMedication, anxietyLevel, stressLevel, sleepQuality, depressionHistory,
-      emergencyContact,
+      email, phone, selectedLangs, otherLangText,
+      primaryConcern, problemDesc, therapyGoal, previousTherapy, therapyExperienceDetails, currentMedication, expectations, anxietyLevel, stressLevel, sleepQuality, foodIntake,
+      emName, emRel, emCode, emPhone,
       prefTherapistGender, prefSessionTime
     };
 
@@ -422,17 +505,12 @@ export default function CustomerOnboarding() {
     setStep(stepNum + 1);
   };
 
-  const getLangLabel = () => {
-    const langObj = LANGUAGES_LIST.find((l) => l.code === prefLanguage);
-    if (!langObj) return prefLanguage || "";
-    if (langObj.code === "other") return otherLangText || "Other";
-    return langObj.label;
-  };
-
   const handleSubmit = async () => {
     if (!user) { navigate("/login"); return; }
     setSaving(true);
     try {
+      const joinedLangs = getLangLabels().join(", ");
+
       const profileData = {
         full_name: fullName || "",
         gender: safe(gender) || "prefer_not_to_say",
@@ -441,7 +519,7 @@ export default function CustomerOnboarding() {
         phone: phone || "",
         occupation: occupation || "",
         relationship_status: safe(relationshipStatus) || "",
-        preferred_language: getLangLabel(),
+        preferred_language: joinedLangs,
         profile_photo_url: photoUrl || "",
         main_concerns: primaryConcern ? [primaryConcern] : [],
         previous_therapy: previousTherapy === "yes",
@@ -449,10 +527,9 @@ export default function CustomerOnboarding() {
         anxiety_level: safe(anxietyLevel) || "none",
         stress_level: safe(stressLevel) || "low",
         sleep_quality: safe(sleepQuality) || "good",
-        depression_history: depressionHistory === "yes",
-        emergency_contact: emergencyContact || "",
+        emergency_contact: `${emName} (${emRel}) - ${emCode} ${emPhone}`,
         preferred_therapist_gender: safe(prefTherapistGender) || "no_preference",
-        preferred_session_time: safe(prefSessionTime) || "flexible",
+        preferred_session_time: safe(prefSessionTime) || "anytime",
         profile_complete: true,
       };
 
@@ -487,7 +564,7 @@ export default function CustomerOnboarding() {
       <StepCard stepNum={1} title="Personal Information" subtitle="Tell us a little about yourself."
         onBack={back} hideBack
         onContinue={() => continueStep(1)}
-        continueDisabled={saving || !fullName || !gender || !country || !photoUrl}
+        continueDisabled={saving || !fullName || !gender || !country || !timezone || !photoUrl}
         continueLabel={saving ? "Saving..." : "Continue"}>
         <div className="space-y-3">
           <div>
@@ -537,7 +614,7 @@ export default function CustomerOnboarding() {
             </div>
           </div>
           <div>
-            <Label className="text-xs">Time Zone</Label>
+            <Label className="text-xs">Time Zone *</Label>
             <select className="mt-1 w-full text-sm border border-gray-200 rounded-lg px-3 h-9 bg-white" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
               <option value="">Select Timezone</option>
               {TIMEZONES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -550,14 +627,20 @@ export default function CustomerOnboarding() {
 
   if (step === 2) {
     const filteredLangs = LANGUAGES_LIST.filter((l) => l.label.toLowerCase().includes(langSearch.toLowerCase()));
+    
+    // Validation: 2 or 3 selected. If other is selected, require text.
+    const isLangsValid = selectedLangs.length >= 2 && selectedLangs.length <= 3;
+    const isOtherValid = selectedLangs.includes("other") ? !!otherLangText.trim() : true;
+    const step2Disabled = saving || !email || !phone || !isLangsValid || !isOtherValid;
+
     return (
       <Layout step={step}>
         <StepCard stepNum={2} title="Contact & Language" subtitle="How can we reach you and what language do you prefer?"
           onBack={back}
           onContinue={() => continueStep(2)}
-          continueDisabled={saving || !email || !phone || !prefLanguage}
+          continueDisabled={step2Disabled}
           continueLabel={saving ? "Saving..." : "Continue"}>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
               <Label className="text-xs">Email Address *</Label>
               <Input type="email" className="mt-1 text-sm h-9 rounded-lg" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com" />
@@ -566,29 +649,39 @@ export default function CustomerOnboarding() {
               <Label className="text-xs">Mobile Number *</Label>
               <div className="flex gap-2 mt-1">
                 <select className="text-xs border border-gray-200 rounded-lg px-2 h-9 bg-white w-20">
-                  <option>+91</option><option>+1</option><option>+44</option><option>+971</option><option>+65</option>
+                  {COUNTRY_CODES.map(c => <option key={c}>{c}</option>)}
                 </select>
                 <Input className="flex-1 text-sm h-9 rounded-lg" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" />
               </div>
             </div>
             <div>
-              <Label className="text-xs">Preferred Language *</Label>
-              <p className="text-[10px] text-gray-400 mb-1">We'll use this to match you with therapists who speak your language.</p>
-              <Input className="mt-0.5 text-sm h-9 rounded-lg" placeholder="Search languages..." value={langSearch} onChange={(e) => setLangSearch(e.target.value)} />
-              <div className="mt-1.5 max-h-40 overflow-y-auto space-y-1 pr-0.5">
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs">Preferred Languages *</Label>
+                <span className={`text-[10px] font-bold ${selectedLangs.length >= 2 ? "text-green-600" : "text-amber-500"}`}>
+                  {selectedLangs.length}/3 Selected
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-500 mb-2">Please select any 2 to 3 languages you are comfortable with.</p>
+              
+              <Input className="text-sm h-9 rounded-lg" placeholder="Search languages..." value={langSearch} onChange={(e) => setLangSearch(e.target.value)} />
+              
+              <div className="mt-2 max-h-48 overflow-y-auto space-y-1.5 pr-1">
                 {filteredLangs.map((l) => (
-                  <SelectOption key={l.code} label={l.label} selected={prefLanguage === l.code} onClick={() => setPrefLanguage(l.code)} />
+                  <CheckToggle key={l.code} label={l.label} selected={selectedLangs.includes(l.code)} onClick={() => toggleLang(l.code)} />
                 ))}
               </div>
-              {prefLanguage === "other" && (
-                <div className="mt-2">
-                  <Label className="text-xs">Specify language</Label>
-                  <Input className="mt-1 text-sm h-9 rounded-lg" value={otherLangText} onChange={(e) => setOtherLangText(e.target.value)} placeholder="e.g. Tulu, Konkani" />
+              
+              {selectedLangs.includes("other") && (
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <Label className="text-xs">Specify language(s)</Label>
+                  <Input className="mt-1 text-sm h-9 rounded-lg" value={otherLangText} onChange={(e) => setOtherLangText(e.target.value)} placeholder="e.g. Tulu, Konkani (comma separated)" />
                 </div>
               )}
-              {prefLanguage && prefLanguage !== "other" && (
-                <div className="mt-1.5 p-2 bg-primary/5 rounded-lg text-xs text-primary">
-                  Selected: <span className="font-semibold">{LANGUAGES_LIST.find((l) => l.code === prefLanguage)?.label}</span>
+              
+              {selectedLangs.length > 0 && (
+                <div className="mt-3 p-2.5 bg-primary/5 rounded-lg text-xs text-primary border border-primary/10">
+                  <span className="font-semibold block mb-0.5">Selected:</span>
+                  <span className="text-gray-700">{getLangLabels().join(", ")}</span>
                 </div>
               )}
             </div>
@@ -598,144 +691,176 @@ export default function CustomerOnboarding() {
     );
   }
 
-  if (step === 3) return (
-    <Layout step={step}>
-      <div className="max-w-md mx-auto w-full">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="bg-primary/5 border-b border-gray-100 px-5 py-3 flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
-            <span className="text-[10px] text-primary font-semibold uppercase tracking-wide">BreathingPlace · Profile Setup</span>
-          </div>
-          <div className="px-5 pt-4 pb-3">
-            <h2 className="font-display text-base font-bold text-gray-900 mb-0.5">Well-Being Assessment</h2>
-            <p className="text-xs text-gray-500 mb-4">This information helps your therapist understand your situation better and provide the right support.</p>
+  if (step === 3) {
+    const step3Disabled = saving || !primaryConcern || previousTherapy === null || !foodIntake ||
+      (previousTherapy === "yes" && !therapyExperienceDetails.trim()) ||
+      (previousTherapy === "no" && !expectations.trim());
 
-            <div className="space-y-4">
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
-                    <Heart className="w-3.5 h-3.5 text-red-500" />
+    return (
+      <Layout step={step}>
+        <div className="max-w-md mx-auto w-full">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-primary/5 border-b border-gray-100 px-5 py-3 flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
+              <span className="text-[10px] text-primary font-semibold uppercase tracking-wide">BreathingPlace · Profile Setup</span>
+            </div>
+            <div className="px-5 pt-4 pb-3">
+              <h2 className="font-display text-base font-bold text-gray-900 mb-0.5">Well-Being Assessment</h2>
+              <p className="text-xs text-gray-500 mb-4">This information helps your therapist understand your situation better and provide the right support.</p>
+
+              <div className="space-y-4">
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                    <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                      <Heart className="w-3.5 h-3.5 text-red-500" />
+                    </div>
+                    <span className="text-xs font-bold text-gray-800">Primary Concern *</span>
+                    {primaryConcern && <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">{primaryConcern}</span>}
                   </div>
-                  <span className="text-xs font-bold text-gray-800">Primary Concern *</span>
-                  {primaryConcern && <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">{primaryConcern}</span>}
+                  <div className="p-3 grid grid-cols-2 gap-1.5">
+                    {CONCERNS.map((c) => (
+                      <button key={c} onClick={() => setPrimaryConcern(c)}
+                        className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all text-left ${primaryConcern === c ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
+                        {c}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="p-3 grid grid-cols-2 gap-1.5">
-                  {CONCERNS.map((c) => (
-                    <button key={c} onClick={() => setPrimaryConcern(c)}
-                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all text-left ${primaryConcern === c ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
-                      {c}
+
+                <div>
+                  <Label className="text-xs text-gray-600">Describe Your Situation <span className="text-gray-400">(optional)</span></Label>
+                  <Textarea className="mt-1 text-sm rounded-lg resize-none" rows={3} value={problemDesc} onChange={(e) => setProblemDesc(e.target.value)} placeholder="Tell us briefly what you're going through..." />
+                  <p className="text-[10px] text-gray-400 mt-0.5">Visible to your assigned therapist only.</p>
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                      <Star className="w-3.5 h-3.5 text-blue-500" />
+                    </div>
+                    <span className="text-xs font-bold text-gray-800">Therapy Goal</span>
+                  </div>
+                  <div className="p-3 space-y-1.5">
+                    {GOALS.map((g) => (
+                      <button key={g} onClick={() => setTherapyGoal(g)}
+                        className={`w-full px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left ${therapyGoal === g ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <AssessmentCard icon={Activity} title="Anxiety Level" levels={ANXIETY_LEVELS} selected={anxietyLevel} onSelect={setAnxietyLevel} />
+                <AssessmentCard icon={Activity} title="Stress Level" levels={STRESS_LEVELS} selected={stressLevel} onSelect={setStressLevel} colorClass="text-orange-500" />
+                <AssessmentCard icon={Clock} title="Sleep Quality" levels={SLEEP_QUALITY} selected={sleepQuality} onSelect={setSleepQuality} colorClass="text-indigo-500" />
+                <AssessmentCard icon={Activity} title="Food Intake *" levels={FOOD_INTAKE_OPTS} selected={foodIntake} onSelect={setFoodIntake} colorClass="text-emerald-500" />
+
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                    <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+                      <Shield className="w-3.5 h-3.5 text-green-500" />
+                    </div>
+                    <span className="text-xs font-bold text-gray-800">Previous Therapy Experience *</span>
+                  </div>
+                  <div className="p-3 grid grid-cols-2 gap-1.5">
+                    <button onClick={() => setPreviousTherapy("yes")}
+                      className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${previousTherapy === "yes" ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
+                      Yes
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Label className="text-xs text-gray-600">Describe Your Situation <span className="text-gray-400">(optional)</span></Label>
-                <Textarea className="mt-1 text-sm rounded-lg resize-none" rows={3} value={problemDesc} onChange={(e) => setProblemDesc(e.target.value)} placeholder="Tell us briefly what you're going through..." />
-                <p className="text-[10px] text-gray-400 mt-0.5">Visible to your assigned therapist only.</p>
-              </div>
-
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <Star className="w-3.5 h-3.5 text-blue-500" />
-                  </div>
-                  <span className="text-xs font-bold text-gray-800">Therapy Goal</span>
-                </div>
-                <div className="p-3 space-y-1.5">
-                  {GOALS.map((g) => (
-                    <button key={g} onClick={() => setTherapyGoal(g)}
-                      className={`w-full px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left ${therapyGoal === g ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
-                      {g}
+                    <button onClick={() => setPreviousTherapy("no")}
+                      className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${previousTherapy === "no" ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
+                      No
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              <AssessmentCard icon={Activity} title="Anxiety Level" levels={ANXIETY_LEVELS} selected={anxietyLevel} onSelect={setAnxietyLevel} />
-              <AssessmentCard icon={Activity} title="Stress Level" levels={STRESS_LEVELS} selected={stressLevel} onSelect={setStressLevel} colorClass="text-orange-500" />
-              <AssessmentCard icon={Clock} title="Sleep Quality" levels={SLEEP_QUALITY} selected={sleepQuality} onSelect={setSleepQuality} colorClass="text-indigo-500" />
-
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
-                    <Shield className="w-3.5 h-3.5 text-green-500" />
                   </div>
-                  <span className="text-xs font-bold text-gray-800">Previous Therapy Experience *</span>
-                </div>
-                <div className="p-3 grid grid-cols-2 gap-1.5">
-                  <button onClick={() => setPreviousTherapy("yes")}
-                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${previousTherapy === "yes" ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
-                    Yes, I have
-                  </button>
-                  <button onClick={() => setPreviousTherapy("no")}
-                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${previousTherapy === "no" ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>
-                    No, first time
-                  </button>
-                </div>
-              </div>
+                  
+                  {previousTherapy === "yes" && (
+                    <div className="border-t border-gray-100 p-3 space-y-3 bg-gray-50">
+                      <div>
+                        <Label className="text-xs text-gray-700 font-semibold">Therapy Experience Details *</Label>
+                        <Textarea className="mt-1 text-sm rounded-lg resize-none border-gray-200" rows={2} value={therapyExperienceDetails} onChange={(e) => setTherapyExperienceDetails(e.target.value)} placeholder="Briefly describe your past therapy experience..." />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-700 font-semibold">Medication Name(s) <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Input className="mt-1 text-sm h-9 rounded-lg border-gray-200" value={currentMedication} onChange={(e) => setCurrentMedication(e.target.value)} placeholder="e.g. Sertraline, None" />
+                      </div>
+                    </div>
+                  )}
 
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-                    <Activity className="w-3.5 h-3.5 text-purple-500" />
-                  </div>
-                  <span className="text-xs font-bold text-gray-800">History of Depression?</span>
+                  {previousTherapy === "no" && (
+                    <div className="border-t border-gray-100 p-3 bg-gray-50">
+                      <Label className="text-xs text-gray-700 font-semibold">Expectations From Therapy *</Label>
+                      <Textarea className="mt-1 text-sm rounded-lg resize-none border-gray-200" rows={2} value={expectations} onChange={(e) => setExpectations(e.target.value)} placeholder="What do you hope to achieve from therapy?" />
+                    </div>
+                  )}
                 </div>
-                <div className="p-3 grid grid-cols-2 gap-1.5">
-                  <button onClick={() => setDepressionHistory("yes")}
-                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${depressionHistory === "yes" ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>Yes</button>
-                  <button onClick={() => setDepressionHistory("no")}
-                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${depressionHistory === "no" ? "border-primary bg-primary/5 text-primary" : "border-gray-100 text-gray-600 hover:border-gray-200"}`}>No</button>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                  <span className="font-semibold">🔒 Confidential:</span> All well-being data is shared only with your assigned therapist to help them support you better.
                 </div>
-              </div>
-
-              <div>
-                <Label className="text-xs text-gray-600">Current Medication <span className="text-gray-400">(if any)</span></Label>
-                <Input className="mt-1 text-sm h-9 rounded-lg" value={currentMedication} onChange={(e) => setCurrentMedication(e.target.value)} placeholder="Enter medication name or leave blank" />
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
-                <span className="font-semibold">🔒 Confidential:</span> All well-being data is shared only with your assigned therapist to help them support you better.
               </div>
             </div>
-          </div>
-          <div className="px-5 pb-5 flex gap-2">
-            <Button variant="outline" size="sm" className="flex-shrink-0 rounded-full" onClick={back}>
-              <ArrowLeft className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              className="flex-1 rounded-full bg-primary text-white font-semibold text-sm" size="sm"
-              onClick={() => continueStep(3)}
-              disabled={saving || !primaryConcern || previousTherapy === null}
-            >
-              {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving...</> : "Continue"}
-            </Button>
+            <div className="px-5 pb-5 flex gap-2">
+              <Button variant="outline" size="sm" className="flex-shrink-0 rounded-full" onClick={back}>
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                className="flex-1 rounded-full bg-primary text-white font-semibold text-sm" size="sm"
+                onClick={() => continueStep(3)}
+                disabled={step3Disabled}
+              >
+                {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving...</> : "Continue"}
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
-    </Layout>
-  );
+      </Layout>
+    );
+  }
 
-  if (step === 4) return (
-    <Layout step={step}>
-      <StepCard stepNum={4} title="Emergency Contact" subtitle="This helps us reach someone in case of a crisis situation."
-        onBack={back}
-        onContinue={() => continueStep(4)}
-        continueDisabled={saving}
-        continueLabel={saving ? "Saving..." : "Continue"}>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs">Emergency Contact (Name & Phone)</Label>
-            <Input className="mt-1 text-sm h-9 rounded-lg" value={emergencyContact} onChange={(e) => setEmergencyContact(e.target.value)} placeholder="e.g. Jane Doe – +91 98765 43210" />
+  if (step === 4) {
+    const step4Disabled = saving || !emName.trim() || !emRel.trim() || !emPhone.trim() || emPhone.trim().length !== 10;
+
+    return (
+      <Layout step={step}>
+        <StepCard stepNum={4} title="Emergency Contact" subtitle="This helps us reach someone in case of a crisis situation. All fields are mandatory."
+          onBack={back}
+          onContinue={() => continueStep(4)}
+          continueDisabled={step4Disabled}
+          continueLabel={saving ? "Saving..." : "Continue"}>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs">Contact Name *</Label>
+              <Input className="mt-1 text-sm h-9 rounded-lg" value={emName} onChange={(e) => setEmName(e.target.value)} placeholder="e.g. Jane Doe" />
+            </div>
+            <div>
+              <Label className="text-xs">Relationship *</Label>
+              <Input className="mt-1 text-sm h-9 rounded-lg" value={emRel} onChange={(e) => setEmRel(e.target.value)} placeholder="e.g. Parent, Sibling, Friend" />
+            </div>
+            <div>
+              <Label className="text-xs">Mobile Number *</Label>
+              <div className="flex gap-2 mt-1">
+                <select className="text-xs border border-gray-200 rounded-lg px-2 h-9 bg-white w-24" value={emCode} onChange={(e) => setEmCode(e.target.value)}>
+                  {COUNTRY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <Input 
+                  className="flex-1 text-sm h-9 rounded-lg" 
+                  type="tel" 
+                  maxLength={10} 
+                  value={emPhone} 
+                  onChange={(e) => setEmPhone(e.target.value.replace(/[^0-9]/g, ''))} 
+                  placeholder="10-digit number" 
+                />
+              </div>
+              {emPhone && emPhone.length !== 10 && <p className="text-[10px] text-red-500 mt-1">Must be exactly 10 digits.</p>}
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+              This information is kept strictly confidential and only used in genuine emergency situations.
+            </div>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-            This information is kept confidential and only used in genuine emergency situations.
-          </div>
-        </div>
-      </StepCard>
-    </Layout>
-  );
+        </StepCard>
+      </Layout>
+    );
+  }
 
   if (step === 5) return (
     <Layout step={step}>
@@ -792,7 +917,6 @@ export default function CustomerOnboarding() {
   );
 
   if (step === 6) {
-    const langLabel = getLangLabel();
     const sections = [
       {
         icon: User, title: "Personal Information", goTo: 1,
@@ -811,7 +935,7 @@ export default function CustomerOnboarding() {
         rows: [
           { label: "Email", value: email || "—" },
           { label: "Phone", value: phone || "—" },
-          { label: "Language", value: langLabel || "—" },
+          { label: "Language", value: getLangLabels().join(", ") || "—" },
         ],
       },
       {
@@ -822,20 +946,24 @@ export default function CustomerOnboarding() {
           { label: "Anxiety Level", value: anxietyLevel || "—" },
           { label: "Stress Level", value: stressLevel || "—" },
           { label: "Sleep Quality", value: sleepQuality || "—" },
+          { label: "Food Intake", value: foodIntake || "—" },
           { label: "Prev. Therapy", value: previousTherapy === "yes" ? "Yes" : previousTherapy === "no" ? "No" : "—" },
-          { label: "Depression Hx", value: depressionHistory === "yes" ? "Yes" : depressionHistory === "no" ? "No" : "—" },
           { label: "Medication", value: currentMedication || "None" },
         ],
       },
       {
         icon: Shield, title: "Emergency Contact", goTo: 4,
-        rows: [{ label: "Contact", value: emergencyContact || "—" }],
+        rows: [
+          { label: "Name", value: emName || "—" },
+          { label: "Relationship", value: emRel || "—" },
+          { label: "Phone", value: `${emCode} ${emPhone}` || "—" }
+        ],
       },
       {
         icon: Star, title: "Therapist Preferences", goTo: 5,
         rows: [
           { label: "Therapist Gender", value: prefTherapistGender || "No Preference" },
-          { label: "Session Time", value: prefSessionTime || "Flexible" },
+          { label: "Session Time", value: prefSessionTime || "Anytime" },
           { label: "Session Types", value: "Chat · Voice Call · Video Call" },
         ],
       },
@@ -907,7 +1035,7 @@ export default function CustomerOnboarding() {
     );
   }
 
-  // Step 7 — Terms & Conditions
+  // Step 7 — Terms & Conditions (With Numbered List Formatting)
   if (step === 7) {
     return (
       <Layout step={step}>
@@ -915,7 +1043,9 @@ export default function CustomerOnboarding() {
           onBack={back}
           onContinue={handleSubmit}
           continueDisabled={saving || !tcAccepted}
-          continueLabel={saving ? "Submitting..." : "Accept & Submit Profile"}>
+          continueLabel={saving ? "Submitting..." : "Accept & Submit Profile"}
+          hideContinueBtn={!tcAccepted} // Hides the button entirely until accepted
+        >
           
           <div className="space-y-4">
             <div className="h-64 overflow-y-auto bg-gray-50 p-4 border border-gray-200 rounded-xl text-xs text-gray-700 leading-relaxed">
@@ -937,12 +1067,12 @@ export default function CustomerOnboarding() {
             <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
               <input 
                 type="checkbox" 
-                className="mt-0.5 w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary"
+                className="mt-1 w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary flex-shrink-0"
                 checked={tcAccepted} 
                 onChange={e => setTcAccepted(e.target.checked)} 
               />
-              <span className="text-sm font-medium text-gray-800">
-                I have read and agree to the Customer Terms & Conditions.
+              <span className="text-sm font-medium text-gray-800 leading-snug">
+                By clicking this checkbox, you confirm that you have read and agree to all Customer Terms & Conditions. In the future, if any issue arises, I understand that I am responsible for my actions and decisions.
               </span>
             </label>
           </div>

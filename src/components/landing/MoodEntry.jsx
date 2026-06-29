@@ -26,10 +26,10 @@ export default function MoodEntry({ selectedMood, onSelect }) {
               <button
                 key={m.label}
                 onClick={() => onSelect(m.label)}
-                className={`flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer group hover:border-primary hover:shadow-sm animate-scale-in ${
+                className={`flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all cursor-pointer group hover:border-primary hover:shadow-sm ${
                   selectedMood === m.label ? "border-primary shadow-sm" : "border-gray-200"
                 }`}
-                style={{ animationDelay: `${i * 0.05}s`, backgroundColor: "#F0F0F0" }}
+                style={{ backgroundColor: "#F0F0F0" }}
               >
                 <div className={`w-12 h-12 rounded-full ${m.bg} flex items-center justify-center transition-transform group-hover:scale-110`}>
                   <Icon className={`w-6 h-6 ${m.color}`} />

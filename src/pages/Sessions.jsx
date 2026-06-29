@@ -8,11 +8,16 @@ import { TableRowSkeleton } from "@/components/SkeletonLoader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Calendar, Clock, Plus, X, Video } from "lucide-react";
+import { Calendar, Clock, X, Video, Radio, Download } from "lucide-react";
+
+function downloadCSV(rows, filename) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(","), ...rows.map(r => headers.map(h => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = filename; a.click();
+}
 import { toast } from "sonner";
 import moment from "moment";
 import VideoCallModal from "@/components/VideoCallModal";
@@ -27,20 +32,20 @@ const statusBadge = {
 };
 
 function SessionsContent() {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
   const queryClient = useQueryClient();
-  const [createOpen, setCreateOpen] = useState(false);
   const [cancelDialog, setCancelDialog] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
   const [videoSession, setVideoSession] = useState(null);
-  const [newSession, setNewSession] = useState({ session_date: "", start_time: "", end_time: "", session_type: "regular" });
 
-  const isTherapist = user?.role === "therapist";
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const metaRole = user?.user_metadata?.role || "";
+  const isTherapist = userProfile?.selected_role === "therapist";
+  const isAdmin = metaRole === "admin" || metaRole === "super_admin" || userProfile?.selected_role === "super_admin";
+  const isCustomer = !isTherapist && !isAdmin;
   const filterField = isTherapist ? "therapist_id" : "customer_id";
 
   const { data: sessions = [], isLoading: loadingSessions } = useQuery({
-    queryKey: ["sessions", user?.id, user?.role],
+    queryKey: ["sessions", user?.id, userProfile?.selected_role],
     queryFn: async () => {
       let query = supabase.from("sessions").select("*").order("session_date", { ascending: false }).limit(100);
       if (!isAdmin) {
@@ -51,29 +56,6 @@ function SessionsContent() {
       return data || [];
     },
     enabled: !!user?.id,
-  });
-
-  const { data: therapists = [], isLoading: loadingTherapists } = useQuery({
-    queryKey: ["approved-therapists"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("therapist_profiles").select("*").eq("approval_status", "approved");
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !isTherapist && !isAdmin,
-  });
-
-  const createSession = useMutation({
-    mutationFn: async (data) => {
-      const { error } = await supabase.from("sessions").insert([data]);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      setCreateOpen(false);
-      setNewSession({ session_date: "", start_time: "", end_time: "", session_type: "regular" });
-      toast.success("Session booked successfully!");
-    },
   });
 
   const cancelSession = useMutation({
@@ -89,8 +71,9 @@ function SessionsContent() {
     },
   });
 
+  const liveNow = sessions.filter(s => s.status === "in_progress");
   const upcoming = sessions.filter(s => s.status === "scheduled" && moment(s.session_date).isSameOrAfter(moment(), "day"));
-  const past = sessions.filter(s => s.status !== "scheduled" || moment(s.session_date).isBefore(moment(), "day"));
+  const past = sessions.filter(s => (s.status !== "scheduled" && s.status !== "in_progress") || moment(s.session_date).isBefore(moment(), "day"));
 
   if (loadingSessions) return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -101,21 +84,46 @@ function SessionsContent() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold">Sessions</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {isAdmin ? "All platform sessions" : isTherapist ? "Your client sessions" : "Your therapy sessions"}
           </p>
         </div>
-        {!isTherapist && !isAdmin && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-2" disabled={loadingTherapists}>
-            <Plus className="w-4 h-4" /> Book Session
-          </Button>
-        )}
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
+          const rows = sessions.map(s => ({
+            Date: s.session_date || "", Time: s.start_time || "", Customer: s.customer_name || "",
+            Therapist: s.therapist_name || "", Type: s.session_type || "", Status: s.status || "",
+          }));
+          downloadCSV(rows, `sessions-${new Date().toISOString().slice(0,10)}.csv`);
+        }}>
+          <Download className="w-3.5 h-3.5" /> Download CSV
+        </Button>
       </div>
 
       {isAdmin && <AdminVideoMonitor sessions={sessions} />}
+
+      {/* Live Sessions — admin only */}
+      {isAdmin && liveNow.length > 0 && (
+        <div>
+          <h2 className="font-heading text-base font-semibold mb-3 flex items-center gap-2">
+            <Radio className="w-4 h-4 text-red-500 animate-pulse" />
+            Live Now <span className="text-red-500 font-normal">({liveNow.length})</span>
+          </h2>
+          <div className="space-y-3">
+            {liveNow.map(s => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                isTherapist={false}
+                isAdmin={true}
+                onJoinVideo={() => setVideoSession(s)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="font-heading text-base font-semibold mb-3">
@@ -126,12 +134,7 @@ function SessionsContent() {
             <EmptyState
               icon={Calendar}
               title="No upcoming sessions"
-              description={!isTherapist && !isAdmin ? "Book a session with an approved therapist to get started." : "Sessions scheduled for the future will appear here."}
-              action={!isTherapist && !isAdmin ? (
-                <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-2">
-                  <Plus className="w-3 h-3" /> Book a Session
-                </Button>
-              ) : null}
+              description={isCustomer ? "Book a Premium session via Find Support to schedule a video session." : "Sessions scheduled for the future will appear here."}
             />
           </div>
         ) : (
@@ -172,80 +175,6 @@ function SessionsContent() {
           <EmptyState icon={Clock} title="No sessions found" description="Your session history will appear here." />
         </div>
       )}
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display">Book a Session</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Select Therapist <span className="text-destructive">*</span></Label>
-              {therapists.length === 0 ? (
-                <p className="text-sm text-muted-foreground mt-1 p-3 bg-muted rounded-lg">
-                  No approved therapists available at this time. Please check back later.
-                </p>
-              ) : (
-                <Select value={newSession.therapist_id || ""} onValueChange={v => {
-                  const t = therapists.find(th => th.user_id === v);
-                  setNewSession(prev => ({ ...prev, therapist_id: t?.user_id, therapist_profile_id: t?.id, therapist_name: t?.full_name }));
-                }}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Choose a therapist" /></SelectTrigger>
-                  <SelectContent>
-                    {therapists.map(t => (
-                      <SelectItem key={t.id} value={t.user_id}>
-                        {t.full_name} — {t.qualification}{t.consultation_fee ? ` · ₹${t.consultation_fee}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Date <span className="text-destructive">*</span></Label>
-                <Input type="date" className="mt-1" min={moment().format("YYYY-MM-DD")} value={newSession.session_date} onChange={e => setNewSession(prev => ({ ...prev, session_date: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Session Type</Label>
-                <Select value={newSession.session_type} onValueChange={v => setNewSession(prev => ({ ...prev, session_type: v }))}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="initial_consultation">Initial Consultation</SelectItem>
-                    <SelectItem value="follow_up">Follow Up</SelectItem>
-                    <SelectItem value="regular">Regular Session</SelectItem>
-                    <SelectItem value="crisis">Crisis Session</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Start Time <span className="text-destructive">*</span></Label>
-                <Input type="time" className="mt-1" value={newSession.start_time} onChange={e => setNewSession(prev => ({ ...prev, start_time: e.target.value }))} />
-              </div>
-              <div>
-                <Label>End Time</Label>
-                <Input type="time" className="mt-1" value={newSession.end_time} onChange={e => setNewSession(prev => ({ ...prev, end_time: e.target.value }))} />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => createSession.mutate({
-                ...newSession,
-                customer_id: user.id,
-                customer_name: user.full_name || user.email,
-                status: "scheduled",
-              })}
-              disabled={!newSession.therapist_id || !newSession.session_date || !newSession.start_time || createSession.isPending}
-            >
-              {createSession.isPending ? "Booking..." : "Confirm Booking"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={!!cancelDialog} onOpenChange={() => { setCancelDialog(null); setCancelReason(""); }}>
         <DialogContent>

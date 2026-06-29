@@ -3,13 +3,14 @@ import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Clock, CheckCircle2, User, RefreshCw, Trash2, XCircle, Info, MessageSquare } from "lucide-react";
+import { Send, Clock, CheckCircle2, User, RefreshCw, Trash2, XCircle, Info, MessageSquare, UserCog } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
@@ -26,6 +27,10 @@ export default function AdminFreeSupport() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerProfileLoading, setCustomerProfileLoading] = useState(false);
   const [customerProfileError, setCustomerProfileError] = useState(false);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [therapists, setTherapists] = useState([]);
+  const [selectedTherapistId, setSelectedTherapistId] = useState("");
+  const [chatConfig, setChatConfig] = useState({ free_minutes_new: 15, free_minutes_returning: 10 });
 
   const fetchSessions = async () => {
     try {
@@ -39,6 +44,13 @@ export default function AdminFreeSupport() {
 
   useEffect(() => {
     fetchSessions();
+    // Load platform chat config for timer duration
+    supabase.from("platform_settings").select("setting_value").eq("setting_type", "chat_config").maybeSingle()
+      .then(({ data }) => { if (data?.setting_value) setChatConfig(c => ({ ...c, ...data.setting_value })); });
+    // Load approved therapists for assignment
+    supabase.from("therapist_profiles").select("id,user_id,full_name,specializations").eq("approval_status", "approved")
+      .then(({ data }) => { if (data) setTherapists(data); });
+
     const sub = supabase.channel('admin_support_sessions_queue')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_sessions' }, fetchSessions)
       .subscribe();
@@ -124,9 +136,22 @@ export default function AdminFreeSupport() {
   const acceptSession = async () => {
     if (!activeSessionId) return;
     try {
+      // Check if returning customer to decide free minutes
+      const activeSession = sessions.find(s => s.id === activeSessionId);
+      const { data: prevSessions } = await supabase
+        .from("support_sessions")
+        .select("id")
+        .eq("customer_id", activeSession?.customer_id)
+        .eq("status", "completed")
+        .neq("id", activeSessionId);
+      const isReturning = (prevSessions?.length || 0) > 0;
+      const freeMinutes = isReturning
+        ? (chatConfig.free_minutes_returning ?? 10)
+        : (chatConfig.free_minutes_new ?? 15);
+
       const timerEnd = new Date();
-      timerEnd.setMinutes(timerEnd.getMinutes() + 10);
-      
+      timerEnd.setMinutes(timerEnd.getMinutes() + freeMinutes);
+
       const { error } = await supabase.from('support_sessions').update({
         status: "active",
         started_at: new Date().toISOString(),
@@ -134,9 +159,27 @@ export default function AdminFreeSupport() {
       }).eq('id', activeSessionId);
 
       if (error) throw error;
-      toast.success("✅ Customer request accepted successfully. Chat session started.");
+      toast.success(`✅ Session started. ${freeMinutes} minutes free chat.`);
     } catch (err) {
       toast.error("❌ Failed to create chat session.");
+    }
+  };
+
+  const assignToTherapist = async () => {
+    if (!activeSessionId || !selectedTherapistId) return;
+    try {
+      const therapist = therapists.find(t => t.id === selectedTherapistId);
+      const { error } = await supabase.from('support_sessions').update({
+        assigned_therapist_id: therapist?.user_id,
+        assigned_therapist_name: therapist?.full_name,
+        status: "assigned",
+      }).eq('id', activeSessionId);
+      if (error) throw error;
+      setShowAssignDialog(false);
+      setSelectedTherapistId("");
+      toast.success(`✅ Session assigned to ${therapist?.full_name}`);
+    } catch (err) {
+      toast.error("❌ Failed to assign session.");
     }
   };
 
@@ -268,6 +311,7 @@ export default function AdminFreeSupport() {
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">{sessions.filter(s => s.status === "pending" || s.status === "reviewing").length} Pending</Badge>
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{sessions.filter(s => s.status === "active").length} Active</Badge>
+              <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">{sessions.filter(s => s.status === "assigned").length} Assigned</Badge>
               <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">{sessions.filter(s => s.status === "completed").length} Completed</Badge>
             </div>
           </div>
@@ -328,9 +372,12 @@ export default function AdminFreeSupport() {
                     </div>
                   )}
                   {isPending && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button variant="outline" size="sm" onClick={viewCustomerDetails} className="text-blue-600 border-blue-200 hover:bg-blue-50">
                         <Info className="w-4 h-4 mr-1"/> Details
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setShowAssignDialog(true)} className="text-purple-600 border-purple-200 hover:bg-purple-50">
+                        <UserCog className="w-4 h-4 mr-1"/> Assign Therapist
                       </Button>
                       <Button variant="outline" size="sm" onClick={cancelSession} className="text-orange-600 border-orange-200 hover:bg-orange-50">
                         <XCircle className="w-4 h-4 mr-1"/> Cancel
@@ -517,6 +564,38 @@ export default function AdminFreeSupport() {
           <div className="p-4 bg-white border-t border-gray-200 flex justify-end">
             <Button onClick={() => setShowCustomerDetails(false)}>Close</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign to Therapist Dialog */}
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Assign to Therapist</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-500">Select an approved therapist to handle this free support chat session.</p>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {therapists.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No approved therapists found.</p>
+            ) : therapists.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedTherapistId(t.id)}
+                className={`w-full text-left p-3 rounded-lg border transition-all ${selectedTherapistId === t.id ? "bg-purple-50 border-purple-300" : "border-gray-200 hover:border-purple-200"}`}
+              >
+                <p className="font-semibold text-sm text-gray-900">{t.full_name}</p>
+                {t.specializations?.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-0.5">{t.specializations.slice(0, 2).join(", ")}</p>
+                )}
+              </button>
+            ))}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowAssignDialog(false); setSelectedTherapistId(""); }}>Cancel</Button>
+            <Button disabled={!selectedTherapistId} onClick={assignToTherapist} className="bg-purple-600 hover:bg-purple-700 text-white">
+              Assign Session
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

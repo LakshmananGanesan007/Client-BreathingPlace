@@ -244,8 +244,6 @@ function DashboardContent() {
 
   const activeFreeSession = freeSessions.find(s => s.status === "active" || s.status === "pending" || s.status === "reviewing");
   const completedFreeSessions = freeSessions.filter(s => s.status === "completed");
-  
-  const hasUsedFreeSupport = profile?.free_support_used || freeSessions.length > 0;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -290,41 +288,39 @@ function DashboardContent() {
         <p className="text-muted-foreground mt-1 text-sm">Your mental wellness overview</p>
       </div>
 
-      <div className={`grid gap-4 ${hasUsedFreeSupport ? "grid-cols-1 max-w-md" : "sm:grid-cols-2"}`}>
-        {!hasUsedFreeSupport && (
-          <button
-            onClick={() => navigate("/talk-freely")}
-            disabled={profileIncomplete}
-            className={`group rounded-2xl p-6 border-2 text-left transition-all ${profileIncomplete ? "opacity-50 cursor-not-allowed border-gray-200 bg-white" : "border-primary/30 bg-white hover:border-primary hover:shadow-md cursor-pointer"}`}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <MessageCircle className="w-5 h-5 text-primary" />
-              </div>
-              <span className="text-xs font-bold uppercase tracking-wide text-primary">Free</span>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <button
+          onClick={() => navigate("/talk-freely")}
+          disabled={profileIncomplete}
+          className={`group rounded-2xl p-6 border-2 text-left transition-all ${profileIncomplete ? "opacity-50 cursor-not-allowed border-gray-200 bg-white" : "border-primary/30 bg-white hover:border-primary hover:shadow-md cursor-pointer"}`}
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <MessageCircle className="w-5 h-5 text-primary" />
             </div>
-            <h3 className="font-display text-xl font-bold text-gray-900 mb-1">Talk Freely</h3>
-            <p className="text-sm text-gray-500">A safe space to express yourself freely. Start a free 10-minute chat session.</p>
-            <div className="mt-4 flex items-center gap-1 text-primary text-sm font-semibold group-hover:gap-2 transition-all">
-              Start Free Chat <ArrowRight className="w-4 h-4" />
-            </div>
-          </button>
-        )}
+            <span className="text-xs font-bold uppercase tracking-wide text-primary">Free</span>
+          </div>
+          <h3 className="font-display text-xl font-bold text-gray-900 mb-1">Talk Freely</h3>
+          <p className="text-sm text-gray-500">A safe space to express yourself freely. Start a free chat session.</p>
+          <div className="mt-4 flex items-center gap-1 text-primary text-sm font-semibold group-hover:gap-2 transition-all">
+            Start Free Chat <ArrowRight className="w-4 h-4" />
+          </div>
+        </button>
 
         <button
           onClick={() => navigate("/find-support")}
           disabled={profileIncomplete}
-          className={`group rounded-2xl p-6 border-2 text-left transition-all ${profileIncomplete ? "opacity-50 cursor-not-allowed border-gray-200 bg-white" : "border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 hover:border-amber-400 hover:shadow-md cursor-pointer"}`}
+          className={`group rounded-2xl p-6 border-2 text-left transition-all ${profileIncomplete ? "opacity-50 cursor-not-allowed border-gray-200 bg-white" : "border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-100 cursor-pointer"}`}
         >
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
-              <HeartHandshake className="w-5 h-5 text-amber-600" />
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+              <HeartHandshake className="w-5 h-5 text-blue-600" />
             </div>
-            <span className="text-xs font-bold uppercase tracking-wide text-amber-600">⭐ Premium</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-blue-600">✦ Premium</span>
           </div>
-          <h3 className="font-display text-xl font-bold text-amber-900 mb-1">Find Support</h3>
-          <p className="text-sm text-amber-700">Get matched with a dedicated therapist for professional, ongoing support.</p>
-          <div className="mt-4 flex items-center gap-1 text-amber-600 text-sm font-semibold group-hover:gap-2 transition-all">
+          <h3 className="font-display text-xl font-bold text-blue-900 mb-1">Find Support Premium</h3>
+          <p className="text-sm text-blue-700">Get matched with a certified therapist for professional, confidential support.</p>
+          <div className="mt-4 flex items-center gap-1 text-blue-600 text-sm font-semibold group-hover:gap-2 transition-all">
             Find a Therapist <ArrowRight className="w-4 h-4" />
           </div>
         </button>

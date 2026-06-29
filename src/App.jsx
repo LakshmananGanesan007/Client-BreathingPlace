@@ -43,11 +43,15 @@ import CustomerOnboarding from './pages/CustomerOnboarding';
 import JoinSupportFlow from './pages/JoinSupportFlow';
 import TherapistProfileEditor from './pages/TherapistProfileEditor';
 import BookingPage from './pages/BookingPage';
+import TherapistPayments from './pages/TherapistPayments';
 import ChatPage from './pages/ChatPage';
-import AdminSetupDatabase from './pages/AdminSetupDatabase';
+import AdminLogs from './pages/AdminLogs';
 import TherapistLanding from './pages/TherapistLanding';
 import FreeSupportChat from './pages/FreeSupportChat';
 import AdminFreeSupport from './pages/AdminFreeSupport';
+import AdminPricing from './pages/AdminPricing';
+import AdminBankAccount from './pages/AdminBankAccount';
+import PaymentReturn from './pages/PaymentReturn';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -76,6 +80,7 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/payment-return" element={<PaymentReturn />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -101,7 +106,9 @@ const AuthenticatedApp = () => {
           <Route path="/therapist/sessions" element={<Sessions />} />
           <Route path="/therapist/calendar" element={<TherapistCalendar />} />
           <Route path="/therapist/profile-editor" element={<TherapistProfileEditor />} />
+          <Route path="/therapist/payments" element={<TherapistPayments />} />
         </Route>
+        <Route path="/therapist/free-chat" element={<FreeSupportChat />} />
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/approvals" element={<AdminApprovals />} />
@@ -112,7 +119,9 @@ const AuthenticatedApp = () => {
           <Route path="/admin/blog" element={<AdminBlog />} />
           <Route path="/admin/about" element={<AdminAboutUs />} />
           <Route path="/admin/free-support" element={<AdminFreeSupport />} />
-          <Route path="/admin/setup-database" element={<AdminSetupDatabase />} />
+          <Route path="/admin/pricing" element={<AdminPricing />} />
+          <Route path="/admin/bank-account" element={<AdminBankAccount />} />
+          <Route path="/admin/logs" element={<AdminLogs />} />
         </Route>
         <Route path="/find-therapist" element={<TherapySelection />} />
         <Route path="/complete-profile" element={<CompleteProfile />} />

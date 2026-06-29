@@ -1,6 +1,9 @@
-import { Heart, Star, Users, MessageCircle, Shield, Check, ArrowRight } from "lucide-react";
+import { Heart, Star, Users, MessageCircle, Shield, Check, ArrowRight, Facebook, Twitter, Linkedin, Youtube, AlertCircle, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabaseClient";
+import logo from "@/assets/logo.png";
 
 const TRUST = [
   { icon: Shield, title: "Safe and Confidential", desc: "Your privacy is our priority." },
@@ -14,13 +17,6 @@ const STEPS = [
   { num: "02", title: "Choose What Feels Right for You", desc: "Select the kind of support you feel comfortable with — emotional listening or professional guidance." },
   { num: "03", title: "Connect With the Right Person", desc: "Find someone who understands your needs and makes you feel heard." },
   { num: "04", title: "Take a Breath and Talk", desc: "Begin your conversation through chat, voice, or video — in a way that feels safe for you." },
-];
-
-const BLOGS = [
-  { title: "Why Do We Overthink at Night?", time: "5 min read", img: "https://images.unsplash.com/photo-1474540412665-1cdae210ae6b?w=400&q=80", tag: "Mindset" },
-  { title: "Love vs Emotional Attachment", time: "6 min read", img: "https://images.unsplash.com/photo-1516585427167-9f4af9627e6c?w=400&q=80", tag: "Relationships" },
-  { title: "Feeling Emotionally Tired?", time: "4 min read", img: "https://images.unsplash.com/photo-1499988921418-b7df40ff03f9?w=400&q=80", tag: "Burnout" },
-  { title: "Why Do People Feel Lonely Even Around Others?", time: "5 min read", img: "https://images.unsplash.com/photo-1542810104-13bf9bb7deca?w=400&q=80", tag: "Loneliness" },
 ];
 
 export default function HowItWorks({ howWorksImg }) {
@@ -144,6 +140,22 @@ export function TherapistsSection({ therapistImg, therapistImg2 }) {
 }
 
 export function BlogSection() {
+  // Fetch real blog posts from Supabase database
+  const { data: posts = [], isLoading } = useQuery({
+    queryKey: ["blog-posts-landing"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('blog_posts')
+        .select('*')
+        .eq('published', true)
+        .order('created_at', { ascending: false })
+        .limit(4);
+      
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   return (
     <section id="blog" className="py-16" style={{ backgroundColor: "#F0F0E0" }}>
       <div className="max-w-6xl mx-auto px-6">
@@ -161,26 +173,60 @@ export function BlogSection() {
             </Button>
           </Link>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {BLOGS.map((b, i) => (
-            <Link to="/blog" key={b.title} className="animate-fade-in-up" style={{ animationDelay: `${i * 0.1}s` }}>
-              <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer group hover:scale-105">
-                <div className="relative overflow-hidden">
-                  <img src={b.img} alt={b.title} className="w-full h-36 object-cover group-hover:scale-110 transition-transform duration-500" />
-                  <span className="absolute top-3 left-3 bg-primary text-white text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm">
-                    {b.tag}
-                  </span>
-                </div>
-                <div className="p-4">
-                  <h3 className="font-heading font-semibold text-gray-900 text-sm leading-snug mb-2 group-hover:text-primary transition-colors">
-                    {b.title}
-                  </h3>
-                  <p className="text-xs text-gray-400">{b.time}</p>
+        
+        {isLoading ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
+                <div className="h-36 bg-gray-200" />
+                <div className="p-4 space-y-2">
+                  <div className="h-4 bg-gray-200 rounded w-3/4" />
+                  <div className="h-3 bg-gray-200 rounded w-1/2" />
                 </div>
               </div>
-            </Link>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500 text-sm">Blog posts coming soon.</p>
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {posts.map((post, i) => (
+              <Link to={post.slug ? `/blog/${post.slug}` : `/blog`} key={post.id}>
+                <div 
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer group hover:scale-105 animate-fade-in-up"
+                  style={{ animationDelay: `${i * 0.1}s` }}
+                >
+                  <div className="relative overflow-hidden">
+                    {post.cover_image_url ? (
+                      <img 
+                        src={post.cover_image_url} 
+                        alt={post.title} 
+                        className="w-full h-36 object-cover group-hover:scale-110 transition-transform duration-500" 
+                      />
+                    ) : (
+                      <div className="w-full h-36 bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
+                        <FileText className="w-8 h-8 text-primary/30" />
+                      </div>
+                    )}
+                    {post.tag && (
+                      <span className="absolute top-3 left-3 bg-primary text-white text-[10px] font-medium px-2 py-0.5 rounded-full shadow-sm">
+                        {post.tag}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-heading font-semibold text-gray-900 text-sm leading-snug mb-2 group-hover:text-primary transition-colors line-clamp-2">
+                      {post.title}
+                    </h3>
+                    <p className="text-xs text-gray-400">{post.read_time || "5 min read"}</p>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -231,13 +277,13 @@ export function Footer() {
   return (
     <footer className="border-t border-green-700 py-12" style={{ backgroundColor: "#2E8B57" }}>
       <div className="max-w-7xl mx-auto px-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-8 mb-10">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-8 mb-6">
           <div className="col-span-2 sm:col-span-4 lg:col-span-1">
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-7 h-7 rounded-md bg-white/20 flex items-center justify-center">
-                <Heart className="w-3.5 h-3.5 text-white" />
+              <div className="w-9 h-9 bg-white rounded-md flex items-center justify-center p-1 shadow-sm">
+                <img src={logo} alt="BreathingPlace Logo" className="w-full h-full object-contain" />
               </div>
-              <span className="font-display font-semibold text-white">BreathingPlace</span>
+              <span className="font-display font-semibold text-white text-lg">BreathingPlace</span>
             </div>
             <p className="text-xs text-green-100 leading-relaxed">A safe place to breathe, speak, and feel heard.</p>
           </div>
@@ -258,16 +304,28 @@ export function Footer() {
           <div>
             <h4 className="text-sm font-semibold text-white mb-3">Stay Connected</h4>
             <div className="flex gap-3 flex-wrap">
-              {["f", "t", "in", "yt"].map(s => (
-                <a key={s} href="#" className="w-8 h-8 rounded-full bg-white/20 hover:bg-white hover:text-primary transition-all hover:scale-110 flex items-center justify-center text-xs font-bold text-white">
-                  {s}
-                </a>
-              ))}
+              <a href="#" className="w-8 h-8 rounded-full bg-white/20 hover:bg-white hover:text-primary transition-all hover:scale-110 flex items-center justify-center text-white"><Facebook className="w-4 h-4" /></a>
+              <a href="#" className="w-8 h-8 rounded-full bg-white/20 hover:bg-white hover:text-primary transition-all hover:scale-110 flex items-center justify-center text-white"><Twitter className="w-4 h-4" /></a>
+              <a href="#" className="w-8 h-8 rounded-full bg-white/20 hover:bg-white hover:text-primary transition-all hover:scale-110 flex items-center justify-center text-white"><Linkedin className="w-4 h-4" /></a>
+              <a href="#" className="w-8 h-8 rounded-full bg-white/20 hover:bg-white hover:text-primary transition-all hover:scale-110 flex items-center justify-center text-white"><Youtube className="w-4 h-4" /></a>
             </div>
           </div>
         </div>
-        <div className="border-t border-green-700 pt-6 text-center">
-          <p className="text-xs text-green-200">2026 BreathingPlace. All rights reserved.</p>
+
+        {/* Professional Right-Aligned Disclaimer */}
+        <div className="flex justify-end mb-8 mt-4">
+          <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-100 rounded-lg max-w-2xl shadow-sm">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-800 leading-relaxed text-left font-medium">
+              Disclaimer: BreathingPlace provides emotional wellness and counselling support. We do not provide psychiatric diagnosis, clinical assessment, medical treatment, or emergency mental health services.
+            </p>
+          </div>
+        </div>
+
+        <div className="border-t border-green-700 pt-6 text-center md:text-left flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-xs text-green-200">
+            © <a href="https://www.ibm.com/in-en" target="_blank" rel="noopener noreferrer" className="hover:text-white hover:underline transition-colors font-medium">2026 BreathingPlace</a>. All rights reserved.
+          </p>
         </div>
       </div>
     </footer>

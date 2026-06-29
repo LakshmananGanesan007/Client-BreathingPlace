@@ -396,7 +396,8 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {isAdmin && (
+      {/* Change Email — available to all users */}
+      {true && (
         <>
           <Card>
             <CardHeader>

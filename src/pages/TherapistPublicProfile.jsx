@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Star, Clock, Globe, ArrowLeft, Copy, Check, MessageCircle,
-  Phone, Video, User, Share2, GraduationCap, Briefcase, Heart, ChevronDown, ChevronUp
+  Star, Clock, Globe, ArrowLeft, Copy, Check,
+  Video, User, GraduationCap, Briefcase, Heart, ChevronDown, ChevronUp
 } from "lucide-react";
 
 function StarRating({ rating, size = "sm" }) {
@@ -29,27 +29,37 @@ export default function TherapistPublicProfile() {
   const [copied, setCopied] = useState(false);
   const [showAllReviews, setShowAllReviews] = useState(false);
 
-  // Try to find therapist by id (from query param) or by slug
-  const { data: allTherapists = [] } = useQuery({
+  // Fetch therapist directly from Supabase
+  const { data: therapist, isLoading: loadingTherapist } = useQuery({
     queryKey: ["public-therapist-profile", slug, idFromQuery],
     queryFn: async () => {
-      const res = await base44.functions.invoke("getTherapistData", { action: "get_approved" });
-      return res.data?.data || [];
+      if (idFromQuery) {
+        const { data } = await supabase.from("therapist_profiles").select("*").eq("id", idFromQuery).eq("approval_status", "approved").maybeSingle();
+        return data || null;
+      }
+      // Find by slug
+      const { data: bySlug } = await supabase.from("therapist_profiles").select("*").eq("slug", slug).eq("approval_status", "approved").maybeSingle();
+      if (bySlug) return bySlug;
+      // Fallback: search all approved and match by name slug
+      const { data: all } = await supabase.from("therapist_profiles").select("*").eq("approval_status", "approved");
+      return (all || []).find(t => t.full_name?.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") === slug) || null;
     },
+    staleTime: 5 * 60 * 1000,
   });
 
-  const therapist = idFromQuery
-    ? allTherapists.find((t) => t.id === idFromQuery)
-    : allTherapists.find(
-        (t) =>
-          t.slug === slug ||
-          t.full_name?.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") === slug
-      );
-
+  // Real reviews from session_reviews table
   const { data: reviews = [] } = useQuery({
-    queryKey: ["therapist-reviews-public", therapist?.id],
-    queryFn: () => base44.entities.Review.filter({ therapist_id: therapist.id }),
-    enabled: !!therapist?.id,
+    queryKey: ["therapist-reviews-public", therapist?.user_id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("session_reviews")
+        .select("*")
+        .eq("therapist_id", therapist.user_id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return data || [];
+    },
+    enabled: !!therapist?.user_id,
   });
 
   const avgRating = reviews.length > 0 ? (reviews.reduce((a, r) => a + r.rating, 0) / reviews.length).toFixed(1) : null;
@@ -62,14 +72,10 @@ export default function TherapistPublicProfile() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (allTherapists.length > 0 && !therapist) {
+  if (loadingTherapist) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F0F0E0" }}>
-        <div className="text-center">
-          <h2 className="font-display text-2xl font-bold text-gray-900 mb-2">Therapist Not Found</h2>
-          <p className="text-gray-500 mb-4">This profile does not exist or is not available.</p>
-          <Button onClick={() => navigate("/")} className="rounded-lg">Back to Home</Button>
-        </div>
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -77,7 +83,11 @@ export default function TherapistPublicProfile() {
   if (!therapist) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#F0F0E0" }}>
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="text-center">
+          <h2 className="font-display text-2xl font-bold text-gray-900 mb-2">Therapist Not Found</h2>
+          <p className="text-gray-500 mb-4">This profile does not exist or is no longer available.</p>
+          <Button onClick={() => navigate("/")} className="rounded-lg">Back to Home</Button>
+        </div>
       </div>
     );
   }
@@ -163,25 +173,17 @@ export default function TherapistPublicProfile() {
           {/* Session modes */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
             <p className="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Available via</p>
-            <div className="space-y-2">
-              {[
-                { icon: MessageCircle, label: "Chat" },
-                { icon: Phone, label: "Voice Call" },
-                { icon: Video, label: "Video Session" },
-              ].map((m) => (
-                <div key={m.label} className="flex items-center gap-2 text-xs text-gray-600">
-                  <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center">
-                    <m.icon className="w-3.5 h-3.5 text-primary" />
-                  </div>
-                  {m.label}
-                </div>
-              ))}
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center">
+                <Video className="w-3.5 h-3.5 text-primary" />
+              </div>
+              Video Session (Premium)
             </div>
           </div>
 
           {/* Share card */}
           <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5"><Share2 className="w-3.5 h-3.5 text-primary" /> Share This Profile</p>
+            <p className="text-xs font-semibold text-gray-700 mb-2">Share This Profile</p>
             <div className="flex gap-2">
               <input
                 readOnly
@@ -268,7 +270,7 @@ export default function TherapistPublicProfile() {
                           <StarRating rating={r.rating} />
                         </div>
                       </div>
-                      <span className="text-[10px] text-gray-400">{r.created_date ? new Date(r.created_date).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : ""}</span>
+                      <span className="text-[10px] text-gray-400">{(r.created_at || r.created_date) ? new Date(r.created_at || r.created_date).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : ""}</span>
                     </div>
                     {r.comment && <p className="text-xs text-gray-600 leading-relaxed italic">"{r.comment}"</p>}
                   </div>

@@ -9,9 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, User, Brain, Search, RefreshCw, Eye, PauseCircle, FileText, ExternalLink } from "lucide-react";
+import { Users, User, Brain, Search, RefreshCw, Eye, Ban, CheckCircle, PauseCircle, FileText, ExternalLink, Download } from "lucide-react";
 import moment from "moment";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
+
+function downloadCSV(rows, filename) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map(r => headers.map(h => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","))
+  ].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = filename; a.click();
+}
 
 const statusColors = {
   pending: "bg-amber-100 text-amber-800",
@@ -26,22 +39,41 @@ export default function AdminUsers() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewProfile, setViewProfile] = useState(null);
-  const [suspending, setSuspending] = useState(false);
+  const [actionLoading, setActionLoading] = useState(null);
 
   const customers = data?.customers || [];
   const therapists = data?.therapists || [];
   const userProfiles = data?.userProfiles || [];
   const emailMap = Object.fromEntries(userProfiles.map(p => [p.user_id, p.email]));
 
-  const handleSuspend = async (userId) => {
-    setSuspending(true);
-    const result = await updateTherapistStatus(userId, "suspended");
-    setSuspending(false);
+  const handleTherapistAction = async (userId, action) => {
+    setActionLoading(userId);
+    const statusMap = { approve: "approved", reject: "rejected", suspend: "suspended", unblock: "approved" };
+    const result = await updateTherapistStatus(userId, statusMap[action]);
+    setActionLoading(null);
     if (result?.success) {
       queryClient.invalidateQueries({ queryKey: ADMIN_DATA_KEY });
-      toast.success("Account suspended.");
+      const msgs = { approve: "Therapist approved.", reject: "Therapist rejected.", suspend: "Account suspended.", unblock: "Account unblocked." };
+      toast.success(msgs[action]);
     } else {
-      toast.error("Failed to suspend.");
+      toast.error("Action failed. Please try again.");
+    }
+  };
+
+  const handleCustomerBlock = async (userId, block) => {
+    setActionLoading(userId);
+    try {
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({ profile_status: block ? "blocked" : "active" })
+        .eq("user_id", userId);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ADMIN_DATA_KEY });
+      toast.success(block ? "Customer blocked." : "Customer unblocked.");
+    } catch (err) {
+      toast.error("Failed to update customer status.");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -71,9 +103,24 @@ export default function AdminUsers() {
           <h1 className="font-display text-2xl font-bold">User Management</h1>
           <p className="text-muted-foreground mt-1 text-sm">All registered users — live from Supabase database</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => queryClient.invalidateQueries({ queryKey: ADMIN_DATA_KEY })}>
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => queryClient.invalidateQueries({ queryKey: ADMIN_DATA_KEY })}>
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
+            const rows = [...customers.map(c => ({
+              Type: "Customer", Name: c.full_name || "", Email: emailMap[c.user_id] || "", Phone: c.phone || "",
+              Status: userProfiles.find(p => p.user_id === c.user_id)?.profile_status || "active",
+              Joined: moment(c.created_at).format("YYYY-MM-DD"),
+            })), ...therapists.map(t => ({
+              Type: "Therapist", Name: t.full_name || "", Email: emailMap[t.user_id] || "", Phone: t.phone || "",
+              Status: t.approval_status || "", Joined: moment(t.created_at).format("YYYY-MM-DD"),
+            }))];
+            downloadCSV(rows, `users-report-${moment().format("YYYY-MM-DD")}.csv`);
+          }}>
+            <Download className="w-3.5 h-3.5" /> Download
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-3 flex-wrap">
@@ -113,34 +160,49 @@ export default function AdminUsers() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filterCustomers(customers).map(c => (
-                <div key={c.id || c.user_id} className="bg-card rounded-xl border border-border p-4">
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div className="flex items-center gap-3">
-                      {c.profile_photo_url
-                        ? <img src={c.profile_photo_url} alt={c.full_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
-                        : <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"><User className="w-5 h-5 text-primary" /></div>
-                      }
-                      <div>
-                        <p className="text-sm font-semibold">{c.full_name}</p>
-                        <p className="text-xs text-muted-foreground">{emailMap[c.user_id] || "—"}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {c.phone || "No phone"}{c.created_at ? ` · Joined ${moment(c.created_at).format("MMM D, YYYY")}` : ""}
-                        </p>
+              {filterCustomers(customers).map(c => {
+                const isBlocked = userProfiles.find(p => p.user_id === c.user_id)?.profile_status === "blocked";
+                return (
+                  <div key={c.id || c.user_id} className={`bg-card rounded-xl border p-4 ${isBlocked ? "border-red-200 bg-red-50/30" : "border-border"}`}>
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        {c.profile_photo_url
+                          ? <img src={c.profile_photo_url} alt={c.full_name} className="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                          : <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0"><User className="w-5 h-5 text-primary" /></div>
+                        }
+                        <div>
+                          <p className="text-sm font-semibold">{c.full_name}</p>
+                          <p className="text-xs text-muted-foreground">{emailMap[c.user_id] || "—"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.phone || "No phone"}{c.created_at ? ` · Joined ${moment(c.created_at).format("MMM D, YYYY")}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge className="border-0 text-xs bg-blue-100 text-blue-800">customer</Badge>
+                        {isBlocked && <Badge className="border-0 text-xs bg-red-100 text-red-800">Blocked</Badge>}
+                        <Badge className={`border-0 text-xs ${c.profile_complete ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                          {c.profile_complete ? "Complete" : "Incomplete"}
+                        </Badge>
+                        <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setViewProfile({ type: "customer", data: c })}>
+                          <Eye className="w-3 h-3" /> View
+                        </Button>
+                        {isBlocked ? (
+                          <Button size="sm" variant="outline" className="gap-1 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                            onClick={() => handleCustomerBlock(c.user_id, false)} disabled={actionLoading === c.user_id}>
+                            <CheckCircle className="w-3 h-3" /> Unblock
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" className="gap-1 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                            onClick={() => handleCustomerBlock(c.user_id, true)} disabled={actionLoading === c.user_id}>
+                            <Ban className="w-3 h-3" /> Block
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge className="border-0 text-xs bg-blue-100 text-blue-800">customer</Badge>
-                      <Badge className={`border-0 text-xs ${c.profile_complete ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
-                        {c.profile_complete ? "Complete" : "Incomplete"}
-                      </Badge>
-                      <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setViewProfile({ type: "customer", data: c })}>
-                        <Eye className="w-3 h-3" /> View Profile
-                      </Button>
-                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -178,8 +240,15 @@ export default function AdminUsers() {
                         <Eye className="w-3 h-3" /> View
                       </Button>
                       {t.approval_status === "approved" && (
-                        <Button size="sm" variant="outline" className="gap-1 text-xs text-amber-700 border-amber-300" onClick={() => handleSuspend(t.user_id)} disabled={suspending}>
-                          <PauseCircle className="w-3 h-3" /> Suspend
+                        <Button size="sm" variant="outline" className="gap-1 text-xs text-red-700 border-red-300 hover:bg-red-50"
+                          onClick={() => handleTherapistAction(t.user_id, "suspend")} disabled={actionLoading === t.user_id}>
+                          <Ban className="w-3 h-3" /> Block
+                        </Button>
+                      )}
+                      {t.approval_status === "suspended" && (
+                        <Button size="sm" variant="outline" className="gap-1 text-xs text-green-700 border-green-300 hover:bg-green-50"
+                          onClick={() => handleTherapistAction(t.user_id, "unblock")} disabled={actionLoading === t.user_id}>
+                          <CheckCircle className="w-3 h-3" /> Unblock
                         </Button>
                       )}
                     </div>

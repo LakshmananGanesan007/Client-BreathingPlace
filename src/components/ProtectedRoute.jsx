@@ -8,10 +8,10 @@ const ALWAYS_EXEMPT = [
   "/pending-approval", "/home",
 ];
 
-// Customer-only routes — therapists must NOT access these
+// Customer-only routes — therapists/admins must NOT access these
 const CUSTOMER_ONLY_ROUTES = ["/dashboard", "/payments", "/sessions", "/find-therapist", "/book", "/chat"];
-// Therapist-only routes — customers must NOT access these
-const THERAPIST_ONLY_ROUTES = ["/therapist", "/therapist/sessions", "/therapist/calendar", "/therapist/profile-editor"];
+// Therapist-only routes — customers/admins must NOT access these
+const THERAPIST_ONLY_ROUTES = ["/therapist", "/therapist/sessions", "/therapist/calendar", "/therapist/profile-editor", "/therapist/payments", "/therapist/free-chat"];
 
 const DefaultFallback = () => (
   <div className="fixed inset-0 flex items-center justify-center">

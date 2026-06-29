@@ -1,11 +1,12 @@
 import { useAuth } from "@/lib/AuthContext";
-import { LayoutDashboard, Calendar, Clock, Settings, UserCircle } from "lucide-react";
+import { LayoutDashboard, Calendar, Clock, Settings, UserCircle, IndianRupee } from "lucide-react";
 import DashboardLayout from "./DashboardLayout";
 
 const navItems = [
   { path: "/therapist", label: "Dashboard", icon: LayoutDashboard },
   { path: "/therapist/sessions", label: "Sessions", icon: Calendar },
   { path: "/therapist/calendar", label: "My Calendar", icon: Clock },
+  { path: "/therapist/payments", label: "My Earnings", icon: IndianRupee },
   { path: "/therapist/profile-editor", label: "My Profile", icon: UserCircle },
   { path: "/settings", label: "Settings", icon: Settings },
 ];

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\breathingplace\" -Recurse -Directory)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\breathingplace\\\\src\" -Recurse -File | Select-Object @{Name='Path'; Expression={$_.FullName.Replace\\('C:\\\\breathingplace\\\\', ''\\)}} | Sort-Object Path | ForEach-Object { $_.Path })",
+      "Bash(node -e ' *)",
+      "Bash(npx vite *)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(echo \"exit: $?\")",
+      "PowerShell(cd C:\\\\breathingplace; npx vite build 2>&1; Write-Host \"EXIT: $LASTEXITCODE\")",
+      "PowerShell(cd C:\\\\breathingplace; npx vite build --logLevel info 2>&1 | ForEach-Object { $_ } | Out-String | Write-Host)",
+      "Bash(npm run *)",
+      "PowerShell(cd C:\\\\breathingplace; npm run build; Write-Host \"EXIT: $LASTEXITCODE\")",
+      "Bash(npx tsc *)",
+      "PowerShell(cd C:\\\\breathingplace; npm run build; Write-Host \"Exit code: $LASTEXITCODE\")",
+      "PowerShell(cd C:\\\\breathingplace; npm run build; Write-Host \"Build exit: $LASTEXITCODE\")"
+    ]
+  }
+}

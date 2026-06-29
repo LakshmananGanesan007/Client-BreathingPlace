@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import { DashboardSkeleton } from "@/components/SkeletonLoader";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { IndianRupee, Brain, Edit, AlertCircle, Settings2, Save, Loader2, Info } from "lucide-react";
+import { IndianRupee, Brain, Edit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminFees() {
@@ -27,91 +27,31 @@ export default function AdminFees() {
   });
 
   const [editingTherapist, setEditingTherapist] = useState(null);
-  const [individualPrices, setIndividualPrices] = useState({ chat: "", voice: "", video: "" });
+  const [individualPrices, setIndividualPrices] = useState({ video: "", final_customer_price: "" });
   const [isSaving, setIsSaving] = useState(false);
-
-  // Global Platform Fee State
-  const [globalFees, setGlobalFees] = useState({
-    percent_fee: 0,
-    flat_fee: 0,
-    extra_charges: 0,
-    discount: 0,
-  });
-  const [isSavingGlobal, setIsSavingGlobal] = useState(false);
-
-  // Load Global Fees
-  useEffect(() => {
-    async function fetchGlobalFees() {
-      const { data: settings } = await supabase
-        .from('platform_settings')
-        .select('*')
-        .eq('setting_type', 'global_fees')
-        .maybeSingle();
-      
-      if (settings && settings.setting_value) {
-        setGlobalFees(settings.setting_value);
-      }
-    }
-    fetchGlobalFees();
-  }, []);
-
-  const handleSaveGlobalFees = async () => {
-    setIsSavingGlobal(true);
-    try {
-      const { error } = await supabase
-        .from('platform_settings')
-        .upsert({ 
-          setting_type: 'global_fees', 
-          setting_value: globalFees,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'setting_type' });
-
-      if (error) throw error;
-      toast.success("✅ Global platform fees saved successfully!");
-    } catch (err) {
-      console.error(err);
-      toast.error("❌ Failed to save global fees. Please ensure the SQL script was run.");
-    } finally {
-      setIsSavingGlobal(false);
-    }
-  };
-
-  const calculateFinalPrice = (basePrice) => {
-    const base = parseFloat(basePrice) || 0;
-    const percentAmount = base * (parseFloat(globalFees.percent_fee) / 100);
-    const flat = parseFloat(globalFees.flat_fee) || 0;
-    const extra = parseFloat(globalFees.extra_charges) || 0;
-    const discount = parseFloat(globalFees.discount) || 0;
-    
-    const final = base + percentAmount + flat + extra - discount;
-    return final > 0 ? final : 0;
-  };
 
   const handleEditClick = (t) => {
     setEditingTherapist(t);
     setIndividualPrices({
-      chat: (t.chat_price || 0).toString(),
-      voice: (t.voice_price || 0).toString(),
-      video: (t.video_price || 0).toString()
+      video: (t.video_price || 0).toString(),
+      final_customer_price: (t.final_customer_price || "").toString(),
     });
   };
 
   const handleSaveIndividualPrices = async () => {
     if (!editingTherapist) return;
-    
-    const chatP = parseFloat(individualPrices.chat) || 0;
-    const voiceP = parseFloat(individualPrices.voice) || 0;
+
     const videoP = parseFloat(individualPrices.video) || 0;
+    const finalOverride = individualPrices.final_customer_price !== "" ? parseFloat(individualPrices.final_customer_price) : null;
 
     setIsSaving(true);
     try {
+      const updatePayload = { video_price: videoP };
+      if (finalOverride !== null) updatePayload.final_customer_price = finalOverride;
+
       const { error } = await supabase
         .from('therapist_profiles')
-        .update({
-          chat_price: chatP,
-          voice_price: voiceP,
-          video_price: videoP
-        })
+        .update(updatePayload)
         .eq('user_id', editingTherapist.user_id);
 
       if (error) throw error;
@@ -137,62 +77,10 @@ export default function AdminFees() {
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10">
       <div>
-        <h1 className="font-display text-2xl font-bold">Platform Fee Management</h1>
+        <h1 className="font-display text-2xl font-bold">Fee Management</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Configure global platform fees and manually adjust specific therapist base prices. Customers will only see the Final Calculated Price.
+          Set the video session price per therapist. Customers see only the Final Price. Use Pricing Config for global chat/video settings.
         </p>
-      </div>
-
-      {/* Global Platform Fees Card */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
-        <div className="flex items-center gap-2 p-5 border-b border-border bg-muted/20">
-          <Settings2 className="w-5 h-5 text-primary" />
-          <h2 className="font-heading text-base font-semibold">Global Fee Configuration</h2>
-        </div>
-        <div className="p-5">
-          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div>
-              <Label className="text-xs">Percentage Fee (%)</Label>
-              <Input 
-                type="number" className="mt-1 h-9 text-sm" 
-                value={globalFees.percent_fee} 
-                onChange={(e) => setGlobalFees({...globalFees, percent_fee: e.target.value})} 
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Flat Fee (₹)</Label>
-              <Input 
-                type="number" className="mt-1 h-9 text-sm" 
-                value={globalFees.flat_fee} 
-                onChange={(e) => setGlobalFees({...globalFees, flat_fee: e.target.value})} 
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Additional Services (₹)</Label>
-              <Input 
-                type="number" className="mt-1 h-9 text-sm" 
-                value={globalFees.extra_charges} 
-                onChange={(e) => setGlobalFees({...globalFees, extra_charges: e.target.value})} 
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Promo Discount (₹)</Label>
-              <Input 
-                type="number" className="mt-1 h-9 text-sm text-green-600 font-medium" 
-                value={globalFees.discount} 
-                onChange={(e) => setGlobalFees({...globalFees, discount: e.target.value})} 
-              />
-            </div>
-          </div>
-          <div className="flex items-center justify-between bg-primary/5 p-3 rounded-lg border border-primary/20">
-            <p className="text-xs text-primary font-medium flex items-center gap-1.5">
-              <Info className="w-4 h-4" /> Final Price = Base + {globalFees.percent_fee}% + ₹{globalFees.flat_fee} + ₹{globalFees.extra_charges} - ₹{globalFees.discount}
-            </p>
-            <Button size="sm" onClick={handleSaveGlobalFees} disabled={isSavingGlobal} className="gap-2 shadow-sm">
-              {isSavingGlobal ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/> Saving...</> : <><Save className="w-3.5 h-3.5"/> Save Configuration</>}
-            </Button>
-          </div>
-        </div>
       </div>
 
       {/* Therapist Pricing Table */}
@@ -211,18 +99,16 @@ export default function AdminFees() {
                 <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                   <tr>
                     <th className="px-4 py-3">Therapist</th>
-                    <th className="px-4 py-3">Chat Base (Final)</th>
-                    <th className="px-4 py-3">Voice Base (Final)</th>
-                    <th className="px-4 py-3">Video Base (Final)</th>
+                    <th className="px-4 py-3">Video Session Price</th>
+                    <th className="px-4 py-3">Final Price (Customer)</th>
                     <th className="px-4 py-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {approvedTherapists.map(t => {
-                    const currency = t.currency || "INR";
-                    const chatBase = parseFloat(t.chat_price) || 0;
-                    const voiceBase = parseFloat(t.voice_price) || 0;
+                    const currency = t.currency || "₹";
                     const videoBase = parseFloat(t.video_price) || 0;
+                    const finalOverride = t.final_customer_price ? parseFloat(t.final_customer_price) : null;
 
                     return (
                       <tr key={t.id || t.user_id} className="border-b border-border last:border-0 hover:bg-muted/10 transition-colors">
@@ -231,20 +117,18 @@ export default function AdminFees() {
                           <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t.qualification}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <span className="text-gray-400 line-through mr-2 text-xs">{currency}{chatBase.toFixed(0)}</span>
-                          <span className="font-bold text-gray-900 bg-green-50 text-green-700 px-2 py-0.5 rounded">{currency}{calculateFinalPrice(chatBase).toFixed(0)}</span>
+                          <span className="font-semibold text-slate-700">{currency}{videoBase.toFixed(0)}</span>
                         </td>
                         <td className="px-4 py-4">
-                          <span className="text-gray-400 line-through mr-2 text-xs">{currency}{voiceBase.toFixed(0)}</span>
-                          <span className="font-bold text-gray-900 bg-green-50 text-green-700 px-2 py-0.5 rounded">{currency}{calculateFinalPrice(voiceBase).toFixed(0)}</span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-gray-400 line-through mr-2 text-xs">{currency}{videoBase.toFixed(0)}</span>
-                          <span className="font-bold text-gray-900 bg-green-50 text-green-700 px-2 py-0.5 rounded">{currency}{calculateFinalPrice(videoBase).toFixed(0)}</span>
+                          {finalOverride !== null ? (
+                            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-sm">{currency}{finalOverride.toFixed(0)} <span className="text-[10px] font-normal text-blue-500">override</span></span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">Same as video price</span>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-right">
                           <Button size="sm" variant="outline" onClick={() => handleEditClick(t)} className="gap-1.5 h-8">
-                            <Edit className="w-3.5 h-3.5" /> Set Base Prices
+                            <Edit className="w-3.5 h-3.5" /> Edit
                           </Button>
                         </td>
                       </tr>
@@ -259,11 +143,11 @@ export default function AdminFees() {
 
       {/* Set Individual Therapist Prices Dialog */}
       <Dialog open={!!editingTherapist} onOpenChange={() => setEditingTherapist(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Set Individual Base Prices</DialogTitle>
+            <DialogTitle>Set Video Session Price</DialogTitle>
             <DialogDescription>
-              Adjust the base prices for this specific therapist based on their experience. Customers will see the base price PLUS the global platform fees.
+              Set the video session price for this therapist. Customers will see the Final Price.
             </DialogDescription>
           </DialogHeader>
           {editingTherapist && (
@@ -277,40 +161,21 @@ export default function AdminFees() {
                   <p className="text-xs text-blue-700">{editingTherapist.qualification}</p>
                 </div>
               </div>
-              
-              <div className="grid gap-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right col-span-1">Chat Support</Label>
-                  <div className="col-span-3 flex items-center gap-2">
-                    <span className="text-muted-foreground">{editingTherapist.currency || "INR"}</span>
-                    <Input 
-                      type="number" min="0" 
-                      value={individualPrices.chat} 
-                      onChange={e => setIndividualPrices({...individualPrices, chat: e.target.value})} 
-                    />
-                  </div>
+
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm font-semibold">Video Session Price (₹)</Label>
+                  <Input type="number" min="0" className="mt-1" placeholder="e.g. 499"
+                    value={individualPrices.video} onChange={e => setIndividualPrices({...individualPrices, video: e.target.value})} />
+                  <p className="text-xs text-muted-foreground mt-1">Therapist's base video session fee.</p>
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right col-span-1">Voice Call</Label>
-                  <div className="col-span-3 flex items-center gap-2">
-                    <span className="text-muted-foreground">{editingTherapist.currency || "INR"}</span>
-                    <Input 
-                      type="number" min="0" 
-                      value={individualPrices.voice} 
-                      onChange={e => setIndividualPrices({...individualPrices, voice: e.target.value})} 
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label className="text-right col-span-1">Video Call</Label>
-                  <div className="col-span-3 flex items-center gap-2">
-                    <span className="text-muted-foreground">{editingTherapist.currency || "INR"}</span>
-                    <Input 
-                      type="number" min="0" 
-                      value={individualPrices.video} 
-                      onChange={e => setIndividualPrices({...individualPrices, video: e.target.value})} 
-                    />
-                  </div>
+                <div className="border-t pt-3">
+                  <Label className="text-sm font-bold text-blue-700">Final Customer Price Override (₹)</Label>
+                  <Input type="number" min="0" className="mt-1 border-blue-200 focus:ring-blue-500"
+                    placeholder="Leave blank to use video price"
+                    value={individualPrices.final_customer_price}
+                    onChange={e => setIndividualPrices({...individualPrices, final_customer_price: e.target.value})} />
+                  <p className="text-xs text-muted-foreground mt-1">Override the price customers see. Leave blank to show the video session price.</p>
                 </div>
               </div>
             </div>
@@ -318,7 +183,7 @@ export default function AdminFees() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingTherapist(null)}>Cancel</Button>
             <Button onClick={handleSaveIndividualPrices} disabled={isSaving} className="bg-primary text-white">
-              {isSaving ? "Saving..." : "Save Base Prices"}
+              {isSaving ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Saving...</> : "Save Price"}
             </Button>
           </DialogFooter>
         </DialogContent>
